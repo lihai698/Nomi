@@ -1,7 +1,7 @@
 {
   "name": "nomi",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.2",
   "packageManager": "pnpm@10.8.1",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -12,7 +12,8 @@
     "build:electron": "tsc -p electron/tsconfig.json",
     "start": "node ./scripts/start-electron.mjs",
     "preview": "vite preview",
-    "test": "pnpm run build"
+    "test": "pnpm run build",
+    "dist": "electron-builder"
   },
   "dependencies": {
     "@mantine/core": "^7.13.1",
@@ -43,9 +44,31 @@
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.5.0",
     "electron": "^31.7.7",
+    "electron-builder": "^25.1.8",
     "postcss": "^8.5.15",
     "tailwindcss": "3",
     "typescript": "^5.6.3",
     "vite": "^5.4.8"
+  },
+  "build": {
+    "appId": "com.nomi.app",
+    "productName": "Nomi",
+    "files": ["dist/**", "dist-electron/**", "public/**"],
+    "mac": {
+      "target": [{"target": "dmg", "arch": ["arm64"]}, {"target": "dmg", "arch": ["x64"]}],
+      "identity": null
+    },
+    "win": {
+      "target": [{"target": "nsis", "arch": ["x64"]}]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "releaseType": "release"
+    },
+    "artifactName": "${productName}-${os}-${arch}.${ext}"
   }
 }
