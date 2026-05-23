@@ -3,6 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { createExportTempDir, createSafeOutputPaths } from "./exportPaths";
 import { buildWebmToMp4Args } from "./ffmpegCommandBuilder";
+import { parseFfmpegProgressChunk, progressFromOutTime } from "./ffmpegProgress";
 import type { ExportProfile } from "./exportTypes";
 
 export type FfmpegProcessResult = {
@@ -10,7 +11,19 @@ export type FfmpegProcessResult = {
   stderr: string;
 };
 
-export type RunFfmpegProcess = (command: string, args: string[]) => Promise<FfmpegProcessResult>;
+export type FfmpegProgressEvent = {
+  ratio: number;
+  outTimeMs?: number;
+  stage?: string;
+  message?: string;
+};
+
+export type RunFfmpegProcessOptions = {
+  signal?: AbortSignal;
+  onStderr?: (chunk: string) => void;
+};
+
+export type RunFfmpegProcess = (command: string, args: string[], options?: RunFfmpegProcessOptions) => Promise<FfmpegProcessResult>;
 
 export type TranscodeWebmToMp4Options = {
   projectDir: string;
@@ -22,6 +35,11 @@ export type TranscodeWebmToMp4Options = {
   quality?: "small" | "standard" | "high";
   fps?: number;
   runProcess?: RunFfmpegProcess;
+  jobId?: string;
+  durationMs?: number;
+  signal?: AbortSignal;
+  onProgress?: (progress: FfmpegProgressEvent) => void;
+  stderrLogPath?: string;
 };
 
 export type TranscodeWebmFileToMp4Options = Omit<TranscodeWebmToMp4Options, "inputBytes"> & {
@@ -93,6 +111,69 @@ function commandExists(command: string, pathEnv = process.env.PATH || ""): boole
   return pathParts.some((dir) => fs.existsSync(path.join(dir, runtimeCommand)));
 }
 
+const STDERR_SUMMARY_LIMIT = 16 * 1024;
+
+export class ExportCancelledError extends Error {
+  constructor(message = "Export cancelled") {
+    super(message);
+    this.name = "ExportCancelledError";
+  }
+}
+
+function isAbortLikeError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.name === "AbortError" || error.name === "ExportCancelledError";
+}
+
+function cappedTail(existing: string, chunk: string, limit = STDERR_SUMMARY_LIMIT): string {
+  const next = existing + chunk;
+  if (next.length <= limit) return next;
+  return next.slice(next.length - limit);
+}
+
+function appendLog(logPath: string | undefined, chunk: string): void {
+  if (!logPath || chunk.length === 0) return;
+  fs.mkdirSync(path.dirname(logPath), { recursive: true });
+  fs.appendFileSync(logPath, chunk);
+}
+
+type ProgressStreamState = {
+  buffer: string;
+  recordLines: string[];
+};
+
+function consumeProgressStreamChunk(state: ProgressStreamState, chunk: string, durationMs: number | undefined, onProgress: ((progress: FfmpegProgressEvent) => void) | undefined): void {
+  if (!onProgress) return;
+  state.buffer += chunk;
+  const lines = state.buffer.split(/\r?\n/);
+  state.buffer = lines.pop() ?? "";
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (line.length === 0) continue;
+    state.recordLines.push(line);
+    if (!line.startsWith("progress=")) continue;
+
+    const parsed = parseFfmpegProgressChunk(state.recordLines.join("\n"));
+    state.recordLines = [];
+    if (parsed.outTimeMs === undefined) continue;
+
+    onProgress({
+      ratio: progressFromOutTime(parsed.outTimeMs, durationMs ?? 0),
+      outTimeMs: parsed.outTimeMs,
+      stage: parsed.progress,
+      message: parsed.progress ? `FFmpeg progress: ${parsed.progress}` : undefined,
+    });
+  }
+}
+
+function stderrSummaryForError(stderr: string): string {
+  const detail = stderr.trim();
+  if (!detail) return "";
+  if (stderr.length <= STDERR_SUMMARY_LIMIT) return detail;
+  return `[stderr truncated to last ${STDERR_SUMMARY_LIMIT} chars]\n${detail}`;
+}
+
 type ResolveFfmpegPathOptions = {
   bundledPath?: string;
   resourcesPath?: string;
@@ -125,15 +206,46 @@ export function resolveFfmpegPath(explicitPath?: string, options: ResolveFfmpegP
   return candidates.map(executablePathForRuntime).find((candidate) => commandExists(candidate, options.pathEnv)) || "";
 }
 
-function defaultRunProcess(command: string, args: string[]): Promise<FfmpegProcessResult> {
+function defaultRunProcess(command: string, args: string[], options: RunFfmpegProcessOptions = {}): Promise<FfmpegProcessResult> {
   return new Promise((resolve, reject) => {
+    if (options.signal?.aborted) {
+      reject(new ExportCancelledError());
+      return;
+    }
+
     const child = spawn(command, args, { windowsHide: true });
     let stderr = "";
+    let settled = false;
+    let onAbort: (() => void) | undefined;
+    const cleanup = () => {
+      if (onAbort) options.signal?.removeEventListener("abort", onAbort);
+    };
+    onAbort = () => {
+      if (settled) return;
+      child.kill();
+      settled = true;
+      cleanup();
+      reject(new ExportCancelledError());
+    };
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+
     child.stderr?.on("data", (chunk) => {
-      stderr += Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+      const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+      stderr = cappedTail(stderr, text);
+      options.onStderr?.(text);
     });
-    child.on("error", reject);
-    child.on("close", (code) => resolve({ code, stderr }));
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve({ code, stderr });
+    });
   });
 }
 
@@ -162,15 +274,37 @@ export async function transcodeWebmFileToMp4(options: TranscodeWebmFileToMp4Opti
     outputPath: partialOutputPath,
     profile: exportProfileFromLegacyOptions(options),
     noAudio: true,
+    reportProgress: Boolean(options.onProgress || options.durationMs),
   });
+
+  if (options.signal?.aborted) throw new ExportCancelledError();
+
+  let stderrSummary = "";
+  let sawStderrChunk = false;
+  const progressStream: ProgressStreamState = { buffer: "", recordLines: [] };
+  const handleStderr = (chunk: string) => {
+    if (chunk.length === 0) return;
+    sawStderrChunk = true;
+    stderrSummary = cappedTail(stderrSummary, chunk);
+    appendLog(options.stderrLogPath, chunk);
+    consumeProgressStreamChunk(progressStream, chunk, options.durationMs, options.onProgress);
+  };
 
   try {
     const runProcess = options.runProcess || defaultRunProcess;
-    const result = await runProcess(ffmpegPath, args);
+    const result = await runProcess(ffmpegPath, args, { signal: options.signal, onStderr: handleStderr });
+    if (result.stderr && !sawStderrChunk) {
+      handleStderr(result.stderr);
+    } else if (result.stderr && result.stderr.trim().length > 0 && !stderrSummary.includes(result.stderr)) {
+      stderrSummary = cappedTail(stderrSummary, result.stderr);
+      appendLog(options.stderrLogPath, result.stderr);
+    }
     if (result.code !== 0) {
-      const detail = result.stderr.trim() || `ffmpeg exited with code ${result.code}`;
+      const detail = stderrSummaryForError(stderrSummary) || `ffmpeg exited with code ${result.code}`;
       throw new Error(`导出失败：${detail}`);
     }
+    if (options.signal?.aborted) throw new ExportCancelledError();
+    if (!fs.existsSync(partialOutputPath)) throw new Error("导出失败：MP4 文件未生成");
     const stat = fs.statSync(partialOutputPath);
     if (stat.size <= 0) throw new Error("导出失败：MP4 文件为空");
     fs.renameSync(partialOutputPath, outputPath);
@@ -180,6 +314,11 @@ export async function transcodeWebmFileToMp4(options: TranscodeWebmFileToMp4Opti
       relativePath: outputPaths.relativeFinalPath,
       size: finalStat.size,
     };
+  } catch (error) {
+    if (isAbortLikeError(error) || options.signal?.aborted) {
+      throw new ExportCancelledError(error instanceof Error && error.message ? error.message : undefined);
+    }
+    throw error;
   } finally {
     fs.rmSync(partialOutputPath, { force: true });
   }

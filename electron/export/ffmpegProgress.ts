@@ -37,8 +37,8 @@ export function parseFfmpegProgressChunk(chunk: string): Partial<FfmpegProgress>
         break;
       }
       case "out_time_ms": {
-        const outTimeMs = finiteNumber(value);
-        if (outTimeMs !== undefined) parsed.outTimeMs = outTimeMs;
+        const outTimeMicroseconds = finiteNumber(value);
+        if (outTimeMicroseconds !== undefined) parsed.outTimeMs = outTimeMicroseconds / 1000;
         break;
       }
       case "speed": {

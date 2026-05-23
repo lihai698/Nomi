@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { exportDimensionsForPreset, resolveFfmpegPath, transcodeWebmFileToMp4, transcodeWebmToMp4 } from "./ffmpegRunner";
+import { ExportCancelledError, exportDimensionsForPreset, resolveFfmpegPath, transcodeWebmFileToMp4, transcodeWebmToMp4 } from "./ffmpegRunner";
 
 const tempRoots: string[] = [];
 
@@ -194,6 +194,139 @@ describe("transcodeWebmToMp4", () => {
     })).rejects.toThrow("encoder failed");
 
     expect(attemptedOutputPath).toMatch(/\.partial\.mp4$/);
+    expect(fs.existsSync(attemptedOutputPath)).toBe(false);
+  });
+
+  it("enables ffmpeg progress reporting when progress options are supplied", async () => {
+    const projectDir = makeTempDir();
+    const onProgress = vi.fn();
+    const calls: Array<{ args: string[] }> = [];
+
+    await transcodeWebmToMp4({
+      projectDir,
+      inputBytes: Buffer.from("webm-bytes"),
+      ffmpegPath: "/usr/local/bin/ffmpeg",
+      durationMs: 1000,
+      onProgress,
+      runProcess: async (_command, args) => {
+        calls.push({ args });
+        fs.writeFileSync(args[args.length - 1], "mp4-bytes");
+        return { code: 0, stderr: "" };
+      },
+    });
+
+    expect(calls[0].args).toContain("-progress");
+    expect(calls[0].args.slice(calls[0].args.indexOf("-progress"), calls[0].args.indexOf("-progress") + 2)).toEqual(["-progress", "pipe:2"]);
+    expect(calls[0].args).toContain("-nostats");
+  });
+
+  it("parses progress output from stderr and drives a clamped callback", async () => {
+    const projectDir = makeTempDir();
+    const onProgress = vi.fn();
+
+    await transcodeWebmToMp4({
+      projectDir,
+      inputBytes: Buffer.from("webm-bytes"),
+      ffmpegPath: "/usr/local/bin/ffmpeg",
+      durationMs: 1000,
+      onProgress,
+      runProcess: async (_command, args, runOptions) => {
+        runOptions?.onStderr?.("frame=1\nout_time_ms=250000\nprogress=continue\n");
+        runOptions?.onStderr?.("out_time_ms=1250000\nprogress=end\n");
+        fs.writeFileSync(args[args.length - 1], "mp4-bytes");
+        return { code: 0, stderr: "" };
+      },
+    });
+
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ ratio: 0.25, outTimeMs: 250, stage: "continue" }));
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ ratio: 1, outTimeMs: 1250, stage: "end" }));
+  });
+
+  it("buffers split progress chunks and emits only complete records with an out_time", async () => {
+    const projectDir = makeTempDir();
+    const onProgress = vi.fn();
+
+    await transcodeWebmToMp4({
+      projectDir,
+      inputBytes: Buffer.from("webm-bytes"),
+      ffmpegPath: "/usr/local/bin/ffmpeg",
+      durationMs: 1000,
+      onProgress,
+      runProcess: async (_command, args, runOptions) => {
+        runOptions?.onStderr?.("progr");
+        runOptions?.onStderr?.("ess=continue\n");
+        runOptions?.onStderr?.("frame=2\nout_time_ms=500");
+        runOptions?.onStderr?.("000\nprogress=continue\n");
+        fs.writeFileSync(args[args.length - 1], "mp4-bytes");
+        return { code: 0, stderr: "" };
+      },
+    });
+
+    expect(onProgress).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledWith(expect.objectContaining({ ratio: 0.5, outTimeMs: 500, stage: "continue" }));
+  });
+
+  it("deletes partial output and preserves the stderr log when conversion fails", async () => {
+    const projectDir = makeTempDir();
+    const stderrLogPath = path.join(projectDir, "logs", "ffmpeg.log");
+    let attemptedOutputPath = "";
+
+    await expect(transcodeWebmToMp4({
+      projectDir,
+      inputBytes: Buffer.from("webm-bytes"),
+      ffmpegPath: "/usr/local/bin/ffmpeg",
+      stderrLogPath,
+      runProcess: async (_command, args, runOptions) => {
+        attemptedOutputPath = args[args.length - 1];
+        fs.writeFileSync(attemptedOutputPath, "partial-mp4-bytes");
+        runOptions?.onStderr?.("progress log line\n");
+        return { code: 1, stderr: "encoder failed" };
+      },
+    })).rejects.toThrow("encoder failed");
+
+    expect(fs.existsSync(attemptedOutputPath)).toBe(false);
+    expect(fs.readFileSync(stderrLogPath, "utf8")).toContain("progress log line");
+    expect(fs.readFileSync(stderrLogPath, "utf8")).toContain("encoder failed");
+  });
+
+  it("caps stderr in the thrown summary while preserving the full log on disk", async () => {
+    const projectDir = makeTempDir();
+    const stderrLogPath = path.join(projectDir, "ffmpeg-full.log");
+    const longStderr = `${"x".repeat(90_000)}TAIL-MARKER`;
+
+    await expect(transcodeWebmToMp4({
+      projectDir,
+      inputBytes: Buffer.from("webm-bytes"),
+      ffmpegPath: "/usr/local/bin/ffmpeg",
+      stderrLogPath,
+      runProcess: async (_command, _args, runOptions) => {
+        runOptions?.onStderr?.(longStderr);
+        return { code: 1, stderr: "" };
+      },
+    })).rejects.toSatisfy((error: unknown) => error instanceof Error && error.message.length < 20_000 && error.message.includes("TAIL-MARKER"));
+
+    expect(fs.readFileSync(stderrLogPath, "utf8")).toBe(longStderr);
+  });
+
+  it("rejects aborts with a cancellation error and removes partial output", async () => {
+    const projectDir = makeTempDir();
+    const controller = new AbortController();
+    let attemptedOutputPath = "";
+
+    await expect(transcodeWebmToMp4({
+      projectDir,
+      inputBytes: Buffer.from("webm-bytes"),
+      ffmpegPath: "/usr/local/bin/ffmpeg",
+      signal: controller.signal,
+      runProcess: async (_command, args, runOptions) => {
+        attemptedOutputPath = args[args.length - 1];
+        fs.writeFileSync(attemptedOutputPath, "partial-mp4-bytes");
+        controller.abort();
+        runOptions?.signal?.throwIfAborted?.();
+        throw new ExportCancelledError();
+      },
+    })).rejects.toMatchObject({ name: "ExportCancelledError" });
+
     expect(fs.existsSync(attemptedOutputPath)).toBe(false);
   });
 

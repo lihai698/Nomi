@@ -12,7 +12,7 @@ describe("parseFfmpegProgressChunk", () => {
     ].join("\n"))).toEqual({
       frame: 123,
       fps: 45.1,
-      outTimeMs: 4100000,
+      outTimeMs: 4100,
       speed: 1.2,
       progress: "continue",
     });
