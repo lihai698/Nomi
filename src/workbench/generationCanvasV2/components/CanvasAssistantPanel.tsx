@@ -10,6 +10,37 @@ import { AiReplyActionButton } from '../../ai/AiReplyActionButton'
 import { handleAiComposerKeyDown } from '../../ai/aiComposerKeyboard'
 import { openWorkbenchModelIntegration, WorkbenchAiHeaderActions } from '../../ai/WorkbenchAiHeaderActions'
 
+type PendingToolCall = {
+  toolCallId: string
+  toolName: string
+  args: unknown
+  confirm: (decision: { ok: true; result?: unknown } | { ok: false; message?: string }) => Promise<void>
+}
+
+function summarizeToolCall(toolName: string, args: unknown): string {
+  const record = (args && typeof args === 'object') ? args as Record<string, unknown> : {}
+  if (toolName === 'create_canvas_nodes') {
+    const nodes = Array.isArray(record.nodes) ? record.nodes : []
+    const summary = typeof record.summary === 'string' ? record.summary : ''
+    return `创建 ${nodes.length} 个节点${summary ? `：${summary}` : ''}`
+  }
+  if (toolName === 'connect_canvas_edges') {
+    const edges = Array.isArray(record.edges) ? record.edges : []
+    return `连接 ${edges.length} 条边`
+  }
+  if (toolName === 'set_node_prompt') {
+    return `改写节点 ${String(record.nodeId || '')} 的提示词`
+  }
+  if (toolName === 'delete_canvas_nodes') {
+    const ids = Array.isArray(record.nodeIds) ? record.nodeIds : []
+    return `删除 ${ids.length} 个节点`
+  }
+  if (toolName === 'read_canvas_state') {
+    return '读取画布当前状态'
+  }
+  return `${toolName}`
+}
+
 type CanvasAssistantPanelProps = {
   defaultCollapsed?: boolean
   onCollapsedChange?: (collapsed: boolean) => void
@@ -30,6 +61,24 @@ export default function CanvasAssistantPanel({
   const selectedNodes = React.useMemo(() => generationCanvasTools.read_selected_nodes(), [nodes, selectedNodeIds])
   const [busy, setBusy] = React.useState(false)
   const [mode, setMode] = React.useState<'agent' | 'chat' | 'refine'>('agent')
+  const [pendingToolCalls, setPendingToolCalls] = React.useState<PendingToolCall[]>([])
+
+  const resolvePending = React.useCallback((toolCallId: string, decision: { ok: true; result?: unknown } | { ok: false; message?: string }) => {
+    setPendingToolCalls((current) => {
+      const target = current.find((item) => item.toolCallId === toolCallId)
+      if (target) void target.confirm(decision)
+      return current.filter((item) => item.toolCallId !== toolCallId)
+    })
+  }, [])
+
+  // Exposed for the V2 agent client (wired in B6) so the panel can render
+  // pending tool calls and forward the user's confirmation back to the IPC
+  // session. We surface it via a ref so the call site doesn't have to
+  // re-render on every state change.
+  const pendingToolCallsRef = React.useRef({
+    enqueue: (call: PendingToolCall) => setPendingToolCalls((current) => [...current, call]),
+    clear: () => setPendingToolCalls([]),
+  })
   const draft = useGenerationCanvasStore((state) => state.generationAiDraft)
   const messages = useGenerationCanvasStore((state) => state.generationAiMessages)
   const collapsed = useGenerationCanvasStore((state) => state.generationAiCollapsed)
@@ -200,6 +249,55 @@ export default function CanvasAssistantPanel({
         </div>
       </header>
       <div className={cn('flex flex-col gap-3 min-h-0 overflow-auto p-4')}>
+        {pendingToolCalls.length > 0 ? (
+          <div
+            className={cn(
+              'flex flex-col gap-2 p-3 rounded-nomi border border-nomi-accent-soft bg-nomi-accent-soft/40',
+            )}
+            data-pending-tool-calls="true"
+            aria-label="待确认的 Agent 工具调用"
+          >
+            <div className={cn('text-nomi-accent text-[12px] font-medium uppercase tracking-wider')}>
+              Agent 准备调用工具
+            </div>
+            {pendingToolCalls.map((call) => (
+              <div
+                key={call.toolCallId}
+                className={cn('flex flex-col gap-2 p-2 rounded-nomi-sm bg-nomi-paper border border-nomi-line-soft')}
+                data-tool-call-id={call.toolCallId}
+              >
+                <div className={cn('text-nomi-ink text-[13px] font-medium')}>{call.toolName}</div>
+                <div className={cn('text-nomi-ink-80 text-[12.5px]')}>{summarizeToolCall(call.toolName, call.args)}</div>
+                <details className={cn('text-nomi-ink-60 text-[11.5px]')}>
+                  <summary className={cn('cursor-pointer select-none')}>查看参数</summary>
+                  <pre className={cn('mt-1 max-h-[160px] overflow-auto p-2 rounded-nomi-sm bg-nomi-ink-05 text-[11px] leading-[1.4] whitespace-pre-wrap break-all')}>
+                    {JSON.stringify(call.args, null, 2)}
+                  </pre>
+                </details>
+                <div className={cn('flex items-center justify-end gap-2 mt-1')}>
+                  <WorkbenchButton
+                    className={cn(
+                      'h-7 px-3 rounded-nomi-sm border border-nomi-line bg-nomi-paper text-nomi-ink-80 text-[12px] cursor-pointer',
+                      'hover:bg-nomi-ink-05',
+                    )}
+                    onClick={() => resolvePending(call.toolCallId, { ok: false, message: 'rejected by user' })}
+                  >
+                    拒绝
+                  </WorkbenchButton>
+                  <WorkbenchButton
+                    className={cn(
+                      'h-7 px-3 rounded-nomi-sm border-0 bg-nomi-ink text-nomi-paper text-[12px] cursor-pointer',
+                      'hover:bg-nomi-accent',
+                    )}
+                    onClick={() => resolvePending(call.toolCallId, { ok: true, result: { confirmed: true } })}
+                  >
+                    确认
+                  </WorkbenchButton>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
         {messages.length === 0 ? (
           <div className={cn(
             'flex flex-1 flex-col items-center justify-center gap-[10px]',
