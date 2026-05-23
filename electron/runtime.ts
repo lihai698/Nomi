@@ -202,11 +202,15 @@ type LocalAssetRecord = {
   };
 };
 
+import { parseSkillManifest, type SkillManifest } from "./skills/skillManifestSchema";
+
 type SkillRecord = {
   name: string;
   directoryName: string;
   filePath: string;
   body: string;
+  manifest: SkillManifest | null;
+  manifestPath: string | null;
 };
 
 function nowIso(): string {
@@ -270,21 +274,42 @@ function normalizeSkillLookupKey(value: unknown): string {
     .toLowerCase();
 }
 
+function readSkillManifestFromDisk(dir: string): { manifest: SkillManifest | null; manifestPath: string | null } {
+  const manifestPath = path.join(dir, "skill.json");
+  if (!fs.existsSync(manifestPath)) return { manifest: null, manifestPath: null };
+  try {
+    const raw = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+    const result = parseSkillManifest(raw);
+    if (result.ok) return { manifest: result.manifest, manifestPath };
+    console.warn(`[skill] invalid manifest at ${manifestPath}: ${result.error}`);
+  } catch (err) {
+    console.warn(`[skill] failed to read manifest at ${manifestPath}:`, err);
+  }
+  return { manifest: null, manifestPath: null };
+}
+
 function readSkillRecords(): SkillRecord[] {
   const records: SkillRecord[] = [];
   for (const root of getSkillsRoots()) {
     if (!fs.existsSync(root)) continue;
     for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      const filePath = path.join(root, entry.name, "SKILL.md");
+      // Skip the archive directory; legacy skills live under skills/legacy/ but
+      // are not loadable until they are upgraded to the v2 manifest format.
+      if (entry.name === "legacy") continue;
+      const skillDir = path.join(root, entry.name);
+      const filePath = path.join(skillDir, "SKILL.md");
       if (!fs.existsSync(filePath)) continue;
       const body = readText(filePath).trim();
       if (!body) continue;
+      const { manifest, manifestPath } = readSkillManifestFromDisk(skillDir);
       records.push({
-        name: parseSkillName(body, entry.name),
+        name: manifest?.name || parseSkillName(body, entry.name),
         directoryName: entry.name,
         filePath,
         body,
+        manifest,
+        manifestPath,
       });
     }
   }
@@ -342,15 +367,38 @@ function buildSkillSystemPrompt(payload: JsonRecord): string {
       "继续按用户请求和当前上下文完成任务；不要声称已经加载不存在的 skill。",
     ].join("\n");
   }
-  return [
+  const lines = [
     "Nomi 桌面 Agent 已加载本地 skill。以下内容是本次回复必须参考的领域方法论和输出约束。",
     "注意：本桌面运行时只把 skill 作为本地知识注入；skill 中提到的外部 CLI、HTTP 或文件工具不会自动执行，除非当前对话/界面明确提供了对应能力。",
     `skillKey: ${requested.key || skill.name}`,
     `skillName: ${requested.name || skill.name}`,
     `skillFile: ${path.relative(process.cwd(), skill.filePath)}`,
-    "",
-    skill.body,
-  ].join("\n");
+  ];
+  if (skill.manifest) {
+    lines.push(
+      `skillVersion: ${skill.manifest.version}`,
+      `skillTools (whitelist): ${skill.manifest.tools.join(", ") || "(none)"}`,
+      `skillPermissions: ${skill.manifest.permissions.join(", ") || "(none)"}`,
+      "重要：本 skill 只允许调用 skillTools 中列出的工具。其他工具即便平台暴露，也不要调用。",
+    );
+  }
+  lines.push("", skill.body);
+  return lines.join("\n");
+}
+
+/**
+ * Return the tool whitelist declared by the active skill's manifest, or null
+ * when the request resolves to a legacy markdown-only skill (in which case
+ * callers should not restrict the tool set).
+ *
+ * Exported for use by the agent runtime when constructing streamText calls.
+ */
+export function resolveSkillToolWhitelist(payload: JsonRecord): string[] | null {
+  const requested = readRequestedSkill(payload);
+  if (!requested.key && !requested.name) return null;
+  const skill = findSkillRecord(requested.key, requested.name);
+  if (!skill || !skill.manifest) return null;
+  return [...skill.manifest.tools];
 }
 
 function writeJson(filePath: string, value: unknown): void {
