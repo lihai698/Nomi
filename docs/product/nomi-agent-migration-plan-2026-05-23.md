@@ -612,9 +612,9 @@ Agent({
 
 ### 当前状态
 
-**总进度**: 22/29 tasks (76%)
-**当前 Phase**: ✅ Phase A + B + C 完成 → 启动 Phase D
-**最后更新**: 2026-05-23 (Phase C 完结)
+**总进度**: 29/29 tasks (100% — 待 v0.4.0 final audit 通过后 push tag)
+**当前 Phase**: ✅ A + B + C + D 全部完成 → final audit → v0.4.0 release
+**最后更新**: 2026-05-24 (Phase D 完结)
 
 ### Phase A 进度
 
@@ -675,16 +675,28 @@ Agent({
 
 ### Phase D 进度
 
-| Task | 状态 | Commit |
+| Task | 状态 | Commit (rebased final SHA on main) |
 |---|---|---|
-| D1 Skill manifest schema | ⏸ | - |
-| D2 重构 4 个 skill | ⏸ | - |
-| D3 Loader 升级 | ⏸ | - |
-| D4 归档 22 个 legacy | ⏸ | - |
-| D5 文档同步 | ⏸ | - |
-| D6 静态检查 | ⏸ | - |
-| D7 v0.4.0 发版 | ⏸ | - |
-| D 最终验证 | ⏸ | - |
+| D1 Skill manifest schema (Zod + 5 tests) | ✅ | `92d7067` |
+| D2a storyboard-planner manifest | ✅ | `a0bf191` |
+| D2b workbench-creation manifest | ✅ | `35be232` |
+| D2c workbench-generation manifest | ✅ | `98dd07f` |
+| D2d creation-edit manifest | ✅ | `3481d28` |
+| D3 Loader 升级 (manifest + 工具白名单 + 旧 markdown 兼容) | ✅ | `819ec47` |
+| D4 归档 23 个 legacy skill → `skills/legacy/` | ✅ | `45cc4d0` |
+| D5 文档同步 (README + provider-integration + user-guide + 新 skill-pack-format.md) | ✅ | `2fde7d1` |
+| D6 静态检查 + postJson chat completions 全清 | ✅ | `02048a0` |
+| D7 v0.4.0 版本 bump | ✅ | `ea2e2ea` (本地 tag v0.4.0 等 final audit) |
+| D 最终验证 | ⏸ pending | (spawn final audit agent) |
+
+**Phase D 备注**：
+- Executor 在 D5 文档同步中途 rate limit，orchestrator 接手完成 D5 收尾 + D6 (含一个新冗余清理：runGenerationTask 的文本资产生成路径 postJson → AI SDK generateText) + D7 版本 bump
+- 拆为 22 个 legacy → 实际归档 23 个（多了 storyboard-gen，因为它被新 storyboard-planner 替代）
+- 测试 180 个全过（含用户在 Phase D 期间并行新增的 export 相关测试）
+- 3 个 grep 严格守卫全清：
+  - `<generation_canvas_plan>` — 0 hits in src/electron
+  - `apps/agents` in user-facing docs — 0 hits (engineering plan 内部档案不算)
+  - `postJson.*chat.*completions` in electron/ — 0 hits
 
 ---
 
