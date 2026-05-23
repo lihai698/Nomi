@@ -19,6 +19,7 @@
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",
     "@ai-sdk/openai-compatible": "^0.2.16",
+    "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@mantine/core": "^7.13.1",
     "@mantine/modals": "^7.13.1",
     "@mantine/notifications": "^7.13.1",
@@ -60,6 +61,10 @@
     "appId": "com.nomi.app",
     "productName": "Nomi",
     "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/@ffmpeg-installer/**",
+      "node_modules/.pnpm/@ffmpeg-installer+*/**"
+    ],
     "icon": "build/icon.png",
     "files": [
       "dist/**",

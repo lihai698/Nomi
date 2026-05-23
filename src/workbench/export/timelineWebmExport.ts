@@ -249,7 +249,7 @@ function resolveRecorderMimeType(explicitMimeType?: string): string | undefined 
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate))
 }
 
-function downloadBlob(blob: Blob, filename: string): void {
+export function downloadTimelineBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.className = 'workbench-export__download-link'
@@ -259,6 +259,12 @@ function downloadBlob(blob: Blob, filename: string): void {
   link.click()
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+}
+
+export function createTimelineExportFilename(extension: 'webm' | 'mp4' = 'webm'): string {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `nomi-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.${extension}`
 }
 
 export async function exportTimelineToWebm(options: TimelineWebmExportOptions): Promise<Blob> {
@@ -355,11 +361,9 @@ export async function exportTimelineToWebm(options: TimelineWebmExportOptions): 
   const blob = await recording
   if (blob.size <= 0) throw new Error('导出结果为空')
   options.onProgress?.({ status: 'done', frame: durationFrame, totalFrames: durationFrame, ratio: 1 })
-  const now = new Date()
-  const pad = (n: number) => String(n).padStart(2, '0')
-  const filename = `nomi-${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}.webm`
+  const filename = createTimelineExportFilename('webm')
   if (options.autoDownload !== false) {
-    downloadBlob(blob, filename)
+    downloadTimelineBlob(blob, filename)
   }
   return blob
 }

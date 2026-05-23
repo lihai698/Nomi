@@ -11,6 +11,7 @@ import { toast } from '../../ui/toast'
 import { buildVideoPlaybackUrl } from '../../media/videoPlaybackUrl'
 import { diagnoseVideoPlaybackFailure, logVideoPlaybackFailure } from '../../media/videoPlaybackDiagnostics'
 import { computeTimelineDuration } from '../timeline/timelineMath'
+import { getDesktopBridge } from '../../desktop/bridge'
 
 type TimelinePreviewProps = {
   activeClips: TimelineClip[]
@@ -209,6 +210,7 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
         },
       })
       toast(`已导出到项目 exports 文件夹：${result.relativePath}`, 'success')
+      void getDesktopBridge()?.exports.showInFolder(result.absolutePath).catch(() => undefined)
       setExportStatus('idle')
     } catch (error) {
       setExportStatus('idle')

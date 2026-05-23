@@ -56,6 +56,7 @@ export type DesktopBridge = {
   }
   exports: {
     start: (payload: DesktopMp4ExportStartPayload) => Promise<DesktopMp4ExportResult>
+    showInFolder: (filePath: string) => Promise<{ ok: boolean }>
   }
   tasks: {
     run: (payload: unknown) => Promise<unknown>

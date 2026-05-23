@@ -3,7 +3,7 @@ import { getDesktopBridge } from '../../desktop/bridge'
 import type { DesktopMp4ExportResult } from '../../desktop/bridge'
 import type { TimelineState } from '../timeline/timelineTypes'
 import type { PreviewAspectRatio } from '../workbenchTypes'
-import { exportTimelineToWebm } from './timelineWebmExport'
+import { createTimelineExportFilename, downloadTimelineBlob, exportTimelineToWebm } from './timelineWebmExport'
 import type { ExportQuality } from './exportTypes'
 
 export type ExportTimelineToMp4Options = {
@@ -38,14 +38,21 @@ export async function exportTimelineToMp4(options: ExportTimelineToMp4Options): 
   })
 
   options.onProgress?.({ status: 'converting', ratio: 0.86 })
-  const result = await desktop.exports.start({
-    projectId,
-    webmBytes: await webmBlob.arrayBuffer(),
-    outputName: options.outputName,
-    resolution: options.resolution || '1080p',
-    quality: options.quality || 'standard',
-    fps: options.timeline.fps || 30,
-  })
-  options.onProgress?.({ status: 'done', ratio: 1 })
-  return result
+  try {
+    const result = await desktop.exports.start({
+      projectId,
+      webmBytes: await webmBlob.arrayBuffer(),
+      outputName: options.outputName,
+      resolution: options.resolution || '1080p',
+      quality: options.quality || 'standard',
+      fps: options.timeline.fps || 30,
+    })
+    options.onProgress?.({ status: 'done', ratio: 1 })
+    return result
+  } catch (error) {
+    const fallbackName = createTimelineExportFilename('webm')
+    downloadTimelineBlob(webmBlob, fallbackName)
+    const message = error instanceof Error ? error.message : 'MP4 导出失败'
+    throw new Error(`${message}。已自动下载 WebM 备用文件：${fallbackName}`)
+  }
 }

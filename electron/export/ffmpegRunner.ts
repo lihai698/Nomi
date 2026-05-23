@@ -38,22 +38,49 @@ const QUALITY_CRF: Record<"small" | "standard" | "high", string> = {
   high: "18",
 };
 
-function commandExists(command: string): boolean {
-  if (!command) return false;
-  if (path.isAbsolute(command)) return fs.existsSync(command);
-  const pathParts = String(process.env.PATH || "").split(path.delimiter).filter(Boolean);
-  return pathParts.some((dir) => fs.existsSync(path.join(dir, command)));
+function executablePathForRuntime(candidate: string): string {
+  if (!candidate.includes("app.asar")) return candidate;
+  return candidate.replace(/app\.asar(?!\.unpacked)/g, "app.asar.unpacked");
 }
 
-export function resolveFfmpegPath(explicitPath?: string): string {
+function commandExists(command: string, pathEnv = process.env.PATH || ""): boolean {
+  if (!command) return false;
+  const runtimeCommand = executablePathForRuntime(command);
+  if (path.isAbsolute(runtimeCommand)) return fs.existsSync(runtimeCommand);
+  const pathParts = String(pathEnv || "").split(path.delimiter).filter(Boolean);
+  return pathParts.some((dir) => fs.existsSync(path.join(dir, runtimeCommand)));
+}
+
+type ResolveFfmpegPathOptions = {
+  bundledPath?: string;
+  resourcesPath?: string;
+  pathEnv?: string;
+};
+
+function resolveBundledFfmpegPath(): string {
+  try {
+    // @ffmpeg-installer/ffmpeg resolves to the platform-specific binary shipped with the app.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const bundled = require("@ffmpeg-installer/ffmpeg") as { path?: unknown };
+    return typeof bundled.path === "string" ? bundled.path : "";
+  } catch {
+    return "";
+  }
+}
+
+export function resolveFfmpegPath(explicitPath?: string, options: ResolveFfmpegPathOptions = {}): string {
   if (typeof explicitPath === "string") return explicitPath.trim();
   const explicit = String(process.env.NOMI_FFMPEG_PATH || "").trim();
   if (explicit) return explicit;
+  const executableName = process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+  const resourcesPath = options.resourcesPath ?? process.resourcesPath ?? "";
   const candidates = [
-    path.join(process.resourcesPath || "", "ffmpeg", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg"),
-    process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg",
+    options.bundledPath ?? resolveBundledFfmpegPath(),
+    path.join(resourcesPath, "ffmpeg", executableName),
+    path.join(resourcesPath, "app.asar.unpacked", "node_modules", "@ffmpeg-installer", process.platform === "win32" ? "win32-x64" : process.platform === "darwin" && process.arch === "arm64" ? "darwin-arm64" : process.platform === "darwin" ? "darwin-x64" : "linux-x64", executableName),
+    executableName,
   ];
-  return candidates.find(commandExists) || "";
+  return candidates.map(executablePathForRuntime).find((candidate) => commandExists(candidate, options.pathEnv)) || "";
 }
 
 function sanitizeOutputBaseName(value: string | undefined): string {
@@ -93,7 +120,7 @@ function defaultRunProcess(command: string, args: string[]): Promise<FfmpegProce
 export async function transcodeWebmToMp4(options: TranscodeWebmToMp4Options): Promise<TimelineMp4ExportResult> {
   const ffmpegPath = resolveFfmpegPath(options.ffmpegPath);
   if (!ffmpegPath) {
-    throw new Error("导出失败：缺少 FFmpeg。请安装 ffmpeg 或设置 NOMI_FFMPEG_PATH。");
+    throw new Error("导出失败：MP4 编码组件缺失，请重新安装 Nomi。你不需要单独安装 FFmpeg。");
   }
   if (!options.inputBytes || options.inputBytes.byteLength <= 0) {
     throw new Error("导出失败：输入视频为空");

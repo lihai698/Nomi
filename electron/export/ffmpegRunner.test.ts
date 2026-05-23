@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { transcodeWebmToMp4 } from "./ffmpegRunner";
+import { resolveFfmpegPath, transcodeWebmToMp4 } from "./ffmpegRunner";
 
 const tempRoots: string[] = [];
 
@@ -17,6 +17,36 @@ function makeTempDir(): string {
   tempRoots.push(dir);
   return dir;
 }
+
+describe("resolveFfmpegPath", () => {
+  it("prefers the bundled ffmpeg binary so users do not need to install ffmpeg", () => {
+    const root = makeTempDir();
+    const bundled = path.join(root, "node_modules", "@ffmpeg-installer", process.platform === "win32" ? "win32-x64" : process.platform === "darwin" && process.arch === "arm64" ? "darwin-arm64" : process.platform === "darwin" ? "darwin-x64" : "linux-x64", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+    fs.mkdirSync(path.dirname(bundled), { recursive: true });
+    fs.writeFileSync(bundled, "binary");
+
+    expect(resolveFfmpegPath(undefined, { bundledPath: bundled, resourcesPath: root, pathEnv: "" })).toBe(bundled);
+  });
+
+  it("uses the unpacked ffmpeg binary when the app is packaged in an asar archive", () => {
+    const root = makeTempDir();
+    const asarPath = path.join(root, "app.asar", "node_modules", "@ffmpeg-installer", "darwin-arm64", "ffmpeg");
+    const unpackedPath = asarPath.replace("app.asar", "app.asar.unpacked");
+    fs.mkdirSync(path.dirname(unpackedPath), { recursive: true });
+    fs.writeFileSync(unpackedPath, "binary");
+
+    expect(resolveFfmpegPath(undefined, { bundledPath: asarPath, resourcesPath: root, pathEnv: "" })).toBe(unpackedPath);
+  });
+
+  it("falls back to the packaged resources ffmpeg binary before PATH", () => {
+    const root = makeTempDir();
+    const resourceBinary = path.join(root, "ffmpeg", process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg");
+    fs.mkdirSync(path.dirname(resourceBinary), { recursive: true });
+    fs.writeFileSync(resourceBinary, "binary");
+
+    expect(resolveFfmpegPath(undefined, { bundledPath: "", resourcesPath: root, pathEnv: "" })).toBe(resourceBinary);
+  });
+});
 
 describe("transcodeWebmToMp4", () => {
   it("writes input webm to a temp file and asks ffmpeg to create a playable 1080p mp4", async () => {
@@ -59,13 +89,13 @@ describe("transcodeWebmToMp4", () => {
     })).rejects.toThrow("Unknown encoder libx264");
   });
 
-  it("requires an ffmpeg binary", async () => {
+  it("reports a reinstallable encoder component instead of asking users to install ffmpeg", async () => {
     const projectDir = makeTempDir();
     await expect(transcodeWebmToMp4({
       projectDir,
       inputBytes: Buffer.from("webm-bytes"),
       ffmpegPath: "",
       runProcess: vi.fn(),
-    })).rejects.toThrow("缺少 FFmpeg");
+    })).rejects.toThrow("MP4 编码组件缺失，请重新安装 Nomi");
   });
 });
