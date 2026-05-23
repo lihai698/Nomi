@@ -139,9 +139,9 @@ corepack enable && pnpm install && pnpm dev
 ### 项目结构
 
 ```
-electron/    Electron 主进程 + 本地运行时（文件存储、模型调用）
+electron/    Electron 主进程 + 本地运行时（Agent、文件存储、模型调用）
 src/         前端工作台（React + Vite + Tailwind）
-apps/agents  终端 Agent CLI
+skills/      Skill Pack v2 (SKILL.md + skill.json) — 见 docs/skill-pack-format.md
 ```
 
 

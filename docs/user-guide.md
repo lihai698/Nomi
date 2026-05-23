@@ -86,53 +86,47 @@ Ctrl/Cmd + 滚轮，或点击工具栏 +/- 按钮。
 
 ---
 
-## 终端 Agent（高级）
+## Agent 工具调用（内置）
 
-在终端里用自然语言控制整个工作台。
+从 v0.4.0 起，Agent 直接集成在桌面端运行时里（`electron/runtime.ts`），无需额外 CLI 进程。
+
+**位置**
+
+- **生成区 AI 面板**：右侧抽屉，自然语言控制画布
+- **创作区「拆镜头」按钮**：工具栏右上角，把当前文档一键拆成故事板
 
 **配置**
 
-在 `apps/agents/` 目录下创建 `agents.config.json`：
-
-```json
-{
-  "apiBaseUrl": "https://api.deepseek.com/v1",
-  "apiKey": "你的 API Key",
-  "model": "deepseek-chat"
-}
-```
-
-**启动**
-
-```bash
-cd apps/agents
-pnpm install
-pnpm dev
-```
+顶部工具栏 → **模型接入** → 添加一个文本模型供应商（OpenAI 兼容或 Anthropic）。
+没有任何 `agents.config.json` 之类的旁路文件，所有 Key 通过 UI 录入并加密存放在用户配置目录。
 
 **示例指令**
 
 ```
-把这段剧本拆成 6 个镜头，每个镜头生成图片，按顺序放进时间轴。
+把这段故事拆成 6 个镜头，每个镜头一张图。
 ```
 
 ```
-读取当前画布，把所有图片节点连接到对应的视频节点，然后全部生成。
+读当前画布，把所有图片节点都连一条线到视频节点。
 ```
 
 ```
-在时间轴第 3 个片段后面插入一个 3 秒的黑场。
+帮我把这段段落改写得更口语化。
 ```
 
-Agent 执行时，画布会实时展示变化。
+Agent 的工具调用通过 UI 卡片让用户确认后才执行，画布会实时展示节点出现的过程。
 
 **可用工具**
 
-| 工具 | 说明 |
+| 工具 | 用在 |
 |------|------|
-| `canvas_read` | 读取画布节点和连线 |
-| `canvas_create_nodes` | 创建节点 |
-| `canvas_run_node` | 触发生成 |
-| `timeline_read` | 读取时间轴 |
-| `timeline_add_clip` | 添加片段 |
+| `read_canvas_state` | 读取生成画布的节点和边 |
+| `create_canvas_nodes` | 批量创建画布节点 |
+| `connect_canvas_edges` | 建立节点引用边 |
+| `set_node_prompt` | 改写指定节点的提示词 |
+| `delete_canvas_nodes` | 删除节点（需用户确认） |
+| `creation_read` / `creation_write` | 读取/修改创作区文档 |
+
+每个 skill（`skills/<name>/skill.json`）声明自己允许调用的工具白名单。
+详见 `docs/skill-pack-format.md`。
 | `creation_read` | 读取文稿 |
