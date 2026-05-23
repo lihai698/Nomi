@@ -1,10 +1,12 @@
 import type { ExportProfile, ExportQuality } from "./exportTypes";
+import type { FfmpegFiltergraphPlan } from "./ffmpegFiltergraph";
 
 export type FfmpegTranscodePlan = {
   inputPath: string;
   outputPath: string;
   profile: ExportProfile;
   noAudio: boolean;
+  filtergraph?: FfmpegFiltergraphPlan;
 };
 
 const QUALITY_CRF: Record<ExportQuality, string> = {
@@ -27,7 +29,7 @@ function assertPositiveFiniteNumber(value: number, name: string): void {
 
 export function buildWebmToMp4Args(plan: FfmpegTranscodePlan): string[] {
   const { inputPath, outputPath, profile } = plan;
-  if (!inputPath) throw new Error("Invalid FFmpeg inputPath");
+  if (!inputPath && plan.filtergraph === undefined) throw new Error("Invalid FFmpeg inputPath");
   if (!outputPath) throw new Error("Invalid FFmpeg outputPath");
   if (profile.container !== "mp4") throw new Error(`Unsupported FFmpeg container: ${profile.container}`);
   if (profile.videoCodec !== "h264") throw new Error(`Unsupported FFmpeg video codec: ${profile.videoCodec}`);
@@ -37,10 +39,33 @@ export function buildWebmToMp4Args(plan: FfmpegTranscodePlan): string[] {
   assertPositiveFiniteNumber(profile.fps, "fps");
 
   const vf = `scale=${profile.width}:${profile.height}:force_original_aspect_ratio=decrease,pad=${profile.width}:${profile.height}:(ow-iw)/2:(oh-ih)/2:color=black,format=${profile.pixelFormat}`;
-  const args = [
-    "-y",
-    "-i", inputPath,
-  ];
+  const args = ["-y"];
+
+  if (plan.filtergraph !== undefined) {
+    for (const input of plan.filtergraph.inputs) {
+      args.push(...input.inputArgs, "-i", input.path);
+    }
+
+    args.push("-filter_complex", plan.filtergraph.filterComplex, "-map", plan.filtergraph.videoOutputLabel);
+    if (plan.filtergraph.audioOutputLabel !== undefined && profile.audioCodec !== "none" && !plan.noAudio) {
+      args.push("-map", plan.filtergraph.audioOutputLabel);
+    } else {
+      args.push("-an");
+    }
+
+    args.push(
+      "-r", String(profile.fps),
+      "-c:v", "libx264",
+      "-preset", "medium",
+      "-crf", QUALITY_CRF[profile.quality],
+      "-movflags", "+faststart",
+      outputPath,
+    );
+
+    return args;
+  }
+
+  args.push("-i", inputPath);
 
   if (profile.audioCodec === "none" || plan.noAudio) {
     args.push("-an");

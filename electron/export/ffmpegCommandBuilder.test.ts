@@ -60,4 +60,32 @@ describe("buildWebmToMp4Args", () => {
     expect(build({ quality: "standard" }).slice(-5, -3)).toEqual(["-crf", "23"]);
     expect(build({ quality: "high" }).slice(-5, -3)).toEqual(["-crf", "18"]);
   });
+
+  it("uses filter_complex and explicit maps when a filtergraph plan is provided", () => {
+    const args = buildWebmToMp4Args({
+      inputPath: "/tmp/legacy-input.webm",
+      outputPath: "/tmp/output.partial.mp4",
+      profile: { ...standardProfile, audioCodec: "aac" },
+      noAudio: false,
+      filtergraph: {
+        inputs: [
+          { assetId: "still", path: "/media/still.png", kind: "image", inputArgs: ["-loop", "1", "-t", "5"] },
+          { assetId: "voice", path: "/media/voice.wav", kind: "audio", inputArgs: [] },
+        ],
+        filterComplex: "color=black:size=1920x1080:rate=30:duration=5[base];[base]format=yuv420p[vout];[1:a]adelay=1000|1000[aout]",
+        videoOutputLabel: "[vout]",
+        audioOutputLabel: "[aout]",
+        warnings: [],
+      },
+    });
+
+    expect(args.slice(0, 8)).toEqual(["-y", "-loop", "1", "-t", "5", "-i", "/media/still.png", "-i"]);
+    expect(args).toContain("/media/voice.wav");
+    expect(args).toContain("-filter_complex");
+    expect(args).toContain("color=black:size=1920x1080:rate=30:duration=5[base];[base]format=yuv420p[vout];[1:a]adelay=1000|1000[aout]");
+    expect(args).toContain("-map");
+    expect(args.slice(args.indexOf("-filter_complex") + 2, args.indexOf("-filter_complex") + 6)).toEqual(["-map", "[vout]", "-map", "[aout]"]);
+    expect(args).not.toContain("-vf");
+    expect(args).not.toContain("/tmp/legacy-input.webm");
+  });
 });
