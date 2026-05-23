@@ -611,9 +611,9 @@ Agent({
 
 ### 当前状态
 
-**总进度**: 6/29 tasks (21%)
-**当前 Phase**: ✅ Phase A 完成 → 启动 Phase B
-**最后更新**: 2026-05-23 (Phase A 完结)
+**总进度**: 14/29 tasks (48%)
+**当前 Phase**: ✅ Phase A + B 完成 → 启动 Phase C
+**最后更新**: 2026-05-23 (Phase B 完结)
 
 ### Phase A 进度
 
@@ -633,15 +633,20 @@ Agent({
 
 | Task | 状态 | Commit |
 |---|---|---|
-| B1 Canvas tools schema | ⏸ | - |
-| B2 runAgentChatV2 | ⏸ | - |
-| B3 IPC 流式 | ⏸ | - |
-| B4 前端 consumer | ⏸ | - |
-| B5 工具确认 UI | ⏸ | - |
-| B6 切换 V2 | ⏸ | - |
-| B7 删 XML 解析 | ⏸ | - |
-| B8 单元测试 | ⏸ | - |
-| B 验证关卡 | ⏸ | - |
+| B1 Canvas tools schema | ✅ | (rebased) `90ce2dc` → final SHA on main |
+| B2 runAgentChatV2 | ✅ | `9ca6456` |
+| B3 IPC 流式 | ✅ | `78f311f` |
+| B4 前端 consumer | ✅ | `3523eba` |
+| B5 工具确认 UI | ✅ | `ff4d509` |
+| B6 切换 V2 | ✅ | `2446d68` |
+| B7 删 XML 解析 | ✅ | `348889f` |
+| B8 单元测试 (24 tests) | ✅ | `29f1d58` |
+| B 验证关卡 | ✅ | VERDICT: PROCEED_TO_PHASE_C |
+
+**Phase B 备注**：
+- Executor agent 在 B5 后 rate limit 中断，orchestrator 接手完成 B6-B8
+- Phase B 期间 main 有 5 个并行 commit (mp4 export + ffmpeg + quality-gate + icon + ad-hoc sign)，分支两次 rebase 解决冲突
+- XML parser (`generationCanvasAgentPlan.ts`) 整文件删除，34 个测试全过（24 新 + 4 buildAiSdk + 6 ffmpeg）
 
 ### Phase C 进度
 
