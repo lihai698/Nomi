@@ -3,12 +3,14 @@ import { useWorkbenchStore } from '../workbenchStore'
 import { cn } from '../../utils/cn'
 import { buildClipFromGenerationNode } from '../generationCanvasV2/model/buildClipFromGenerationNode'
 import { clientXToFrame } from './timelineEdit'
+import { buildTimelineDropPreview, type TimelineDropPreview } from './timelineDropFeedback'
 import {
   decodeTimelineGenerationNodeDragPayload,
   TIMELINE_GENERATION_NODE_DRAG_MIME,
 } from './timelineDragPayload'
 import TimelineClip from './TimelineClip'
 import type { TimelineTrack as TimelineTrackData } from './timelineTypes'
+import { toast } from '../../ui/toast'
 
 type TimelineTrackProps = {
   track: TimelineTrackData
@@ -19,7 +21,7 @@ export default function TimelineTrack({ track }: TimelineTrackProps): JSX.Elemen
   const addTimelineClipAtFrame = useWorkbenchStore((state) => state.addTimelineClipAtFrame)
   const setTimelinePlayhead = useWorkbenchStore((state) => state.setTimelinePlayhead)
   const clipsRef = React.useRef<HTMLDivElement | null>(null)
-  const [dragOver, setDragOver] = React.useState(false)
+  const [dragPreview, setDragPreview] = React.useState<TimelineDropPreview | null>(null)
 
   const resolveFrame = React.useCallback((clientX: number) => {
     const rect = clipsRef.current?.getBoundingClientRect()
@@ -27,20 +29,36 @@ export default function TimelineTrack({ track }: TimelineTrackProps): JSX.Elemen
     return clientXToFrame(clientX, rect.left, timeline.scale)
   }, [timeline.scale])
 
-  const handleDrop = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    setDragOver(false)
-    const startFrame = resolveFrame(event.clientX)
+  const resolveDropPreview = React.useCallback((event: React.DragEvent<HTMLDivElement>): TimelineDropPreview | null => {
     const generationNodePayload = decodeTimelineGenerationNodeDragPayload(event.dataTransfer.getData(TIMELINE_GENERATION_NODE_DRAG_MIME))
-    if (generationNodePayload) {
-      const clip = buildClipFromGenerationNode(generationNodePayload.node, {
-        fps: timeline.fps,
-        startFrame,
-        resultId: generationNodePayload.resultId,
-      })
-      if (clip) addTimelineClipAtFrame(clip, clip.type, startFrame)
+    if (!generationNodePayload) return null
+    const startFrame = resolveFrame(event.clientX)
+    const clip = buildClipFromGenerationNode(generationNodePayload.node, {
+      fps: timeline.fps,
+      startFrame,
+      resultId: generationNodePayload.resultId,
+    })
+    if (!clip) return null
+    return buildTimelineDropPreview({
+      track,
+      clip,
+      startFrame,
+      scale: timeline.scale,
+      fps: timeline.fps,
+    })
+  }, [resolveFrame, timeline.fps, timeline.scale, track])
+
+  const handleDrop = React.useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    const preview = resolveDropPreview(event) || dragPreview
+    if (!preview) return
+    event.preventDefault()
+    setDragPreview(null)
+    if (!preview.canPlace) {
+      toast(preview.reason || '这里暂时不能放置素材', 'warning')
+      return
     }
-  }, [addTimelineClipAtFrame, resolveFrame, timeline.fps])
+    addTimelineClipAtFrame(preview.clip, preview.clip.type, preview.startFrame)
+  }, [addTimelineClipAtFrame, dragPreview, resolveDropPreview])
 
   return (
     <div className={cn(
@@ -80,27 +98,34 @@ export default function TimelineTrack({ track }: TimelineTrackProps): JSX.Elemen
           'relative min-h-[46px] overflow-hidden cursor-crosshair',
           'border border-[var(--nomi-line-soft)] rounded-[var(--nomi-radius-sm)]',
           'bg-[var(--nomi-ink-05)] transition-[background,box-shadow] duration-[140ms] ease-in-out',
-          dragOver && 'bg-[var(--workbench-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--workbench-accent)_20%,transparent)]',
+          dragPreview && dragPreview.canPlace && 'bg-[var(--workbench-accent-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--workbench-accent)_20%,transparent)]',
+          dragPreview && !dragPreview.canPlace && 'bg-[var(--workbench-danger-soft)] shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--workbench-danger)_28%,transparent)]',
         )}
         style={{
           width: 'var(--workbench-timeline-content-width, 100%)',
           minWidth: 'var(--workbench-timeline-content-width, 100%)',
         }}
-        data-drag-over={dragOver ? 'true' : 'false'}
+        data-drag-over={dragPreview ? 'true' : 'false'}
+        data-drop-valid={dragPreview ? String(dragPreview.canPlace) : undefined}
         onClick={(event) => {
           setTimelinePlayhead(resolveFrame(event.clientX))
         }}
         onDragEnter={(event) => {
+          const preview = resolveDropPreview(event)
+          if (!preview) return
           event.preventDefault()
-          setDragOver(true)
+          setDragPreview(preview)
         }}
         onDragLeave={(event) => {
           if (event.currentTarget.contains(event.relatedTarget as globalThis.Node | null)) return
-          setDragOver(false)
+          setDragPreview(null)
         }}
         onDragOver={(event) => {
+          const preview = resolveDropPreview(event)
+          if (!preview) return
           event.preventDefault()
-          event.dataTransfer.dropEffect = 'copy'
+          setDragPreview(preview)
+          event.dataTransfer.dropEffect = preview.canPlace ? 'copy' : 'none'
         }}
         onDrop={handleDrop}
       >
@@ -111,6 +136,25 @@ export default function TimelineTrack({ track }: TimelineTrackProps): JSX.Elemen
             'border border-dashed border-[var(--nomi-line)] rounded-[var(--nomi-radius-sm)]',
             'text-[var(--nomi-ink-40)] leading-none text-[11px] font-medium pointer-events-none',
           )}>从生成区拖入素材</div>
+        ) : null}
+        {dragPreview ? (
+          <div
+            className={cn(
+              'workbench-timeline-track__drop-preview',
+              'absolute top-[5px] h-9 z-[2] pointer-events-none',
+              'flex items-center justify-center overflow-visible rounded text-[11px] font-semibold',
+              'border border-dashed backdrop-blur-[8px] shadow-[0_8px_20px_rgba(18,24,38,0.12)]',
+              dragPreview.canPlace
+                ? 'border-[color-mix(in_srgb,var(--workbench-accent)_58%,transparent)] bg-[color-mix(in_srgb,var(--workbench-accent)_20%,var(--nomi-paper))] text-[var(--workbench-ink)]'
+                : 'border-[color-mix(in_srgb,var(--workbench-danger)_64%,transparent)] bg-[var(--workbench-danger-soft)] text-[var(--workbench-danger)]',
+            )}
+            data-valid={dragPreview.canPlace ? 'true' : 'false'}
+            style={{ left: dragPreview.left, width: dragPreview.width }}
+          >
+            <span className={cn('px-2 whitespace-nowrap rounded-full bg-white/70 shadow-sm')}>
+              {dragPreview.canPlace ? `放到 ${dragPreview.timecode}` : dragPreview.reason}
+            </span>
+          </div>
         ) : null}
         {track.clips.map((clip) => (
           <TimelineClip key={clip.id} clip={clip} />

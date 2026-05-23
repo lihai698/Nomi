@@ -5,7 +5,11 @@ import path from "node:path";
 import { generateText, streamText, tool } from "ai";
 import { z } from "zod";
 import { buildAiSdkModel } from "./ai/buildAiSdkModel";
-import { transcodeWebmToMp4 } from "./export/ffmpegRunner";
+import { assertProjectExportRelativePath, ensureExportDirs } from "./export/exportPaths";
+import { ExportJobManager, type ExportJobEvent, type ExportJobSnapshot } from "./export/exportJobManager";
+import { assertValidManifest, type NomiRenderManifestV1 } from "./export/exportManifest";
+import { transcodeWebmFileToMp4, transcodeWebmToMp4 } from "./export/ffmpegRunner";
+import { appendExportTempInputChunk, finishExportTempInput as finishExportTempInputFile, removeExportTempInput } from "./export/exportTempInput";
 import {
   canvasNodeKindSchema,
   plannedEdgeSchema,
@@ -124,8 +128,25 @@ type TimelineMp4ExportRequest = {
   webmBytes?: ArrayBuffer | Uint8Array | number[];
   outputName?: string;
   resolution?: "720p" | "1080p";
+  aspectRatio?: "16:9" | "9:16" | "1:1" | "4:5" | "3:4" | "4:3" | "21:9";
   quality?: "small" | "standard" | "high";
   fps?: number;
+};
+
+type ShowExportInFolderRequest = {
+  projectId?: string;
+  relativePath?: string;
+};
+
+type ExportJobStartRequest = {
+  projectId?: string;
+  manifest?: unknown;
+  outputName?: string;
+};
+
+type ExportTempInputRequest = {
+  jobId?: string;
+  chunk?: ArrayBuffer | Uint8Array | number[];
 };
 
 type TaskResult = {
@@ -148,6 +169,7 @@ const PROJECT_ROOT_ENV = "NOMI_PROJECTS_DIR";
 const CATALOG_FILE = "model-catalog.json";
 const SKILLS_ROOT_ENV = "NOMI_SKILLS_DIR";
 const taskCache = new Map<string, CachedTask>();
+const exportJobManager = new ExportJobManager();
 
 type CachedTask = {
   vendor: string;
@@ -392,8 +414,7 @@ function projectDirById(projectId: string): string | null {
 function ensureProjectFolders(projectDir: string): void {
   ensureDir(projectDir);
   ensureDir(path.join(projectDir, "assets"));
-  ensureDir(path.join(projectDir, "exports"));
-  ensureDir(path.join(projectDir, "cache"));
+  ensureExportDirs(projectDir);
 }
 
 function toSummary(record: ProjectRecord): Omit<ProjectRecord, "payload"> {
@@ -471,6 +492,140 @@ function bufferFromExportBytes(input: TimelineMp4ExportRequest["webmBytes"]): Bu
   throw new Error("导出失败：缺少 WebM 输入数据");
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasUnresolvedRendererAssets(manifest: NomiRenderManifestV1): boolean {
+  return Object.values(manifest.assets).some((asset) => !isPlainRecord(asset) || typeof asset.absolutePath !== "string");
+}
+
+function parseExportJobManifest(value: unknown): NomiRenderManifestV1 {
+  if (isPlainRecord(value) && isPlainRecord(value.assets)) {
+    for (const asset of Object.values(value.assets)) {
+      if (isPlainRecord(asset) && ("url" in asset || "absolutePath" in asset)) {
+        throw new Error("Export job asset resolution is not wired yet; renderer assets cannot start a production export job.");
+      }
+    }
+  }
+  assertValidManifest(value);
+  if (hasUnresolvedRendererAssets(value)) {
+    throw new Error("Export job asset resolution is not wired yet; manifest assets must include absolutePath.");
+  }
+  return value;
+}
+
+export function startExportJob(payload: unknown): { jobId: string } {
+  const raw = (payload || {}) as ExportJobStartRequest;
+  const projectId = String(raw.projectId || "").trim();
+  if (!projectId) throw new Error("projectId is required");
+  const projectDir = projectDirById(projectId);
+  if (!projectDir) throw new Error("Project not found");
+  ensureProjectFolders(projectDir);
+  const manifest = parseExportJobManifest(raw.manifest);
+  if (manifest.projectId !== projectId) {
+    throw new Error("Export job projectId must match manifest.projectId");
+  }
+  const job = exportJobManager.createJob({ projectId, projectDir, manifest, outputName: raw.outputName });
+  return { jobId: job.id };
+}
+
+export function getExportJobStatus(jobId: string): ExportJobSnapshot {
+  const id = String(jobId || "").trim();
+  if (!id) throw new Error("jobId is required");
+  const snapshot = exportJobManager.getJob(id);
+  if (!snapshot) throw new Error(`Export job ${id} was not found`);
+  return snapshot;
+}
+
+export async function cancelExportJob(jobId: string): Promise<{ ok: true }> {
+  const id = String(jobId || "").trim();
+  if (!id) throw new Error("jobId is required");
+  const job = exportJobManager.getJob(id);
+  await exportJobManager.cancelJob(id);
+  if (job) removeExportTempInput(job);
+  return { ok: true };
+}
+
+const EXPORT_TEMP_INPUT_WRITABLE_STATUSES = new Set(["queued", "preparing", "planning", "rendering", "encoding", "muxing", "finalizing"]);
+
+function requireWritableExportJob(jobId: unknown): ExportJobSnapshot {
+  const id = String(jobId || "").trim();
+  if (!id) throw new Error("jobId is required");
+  const job = exportJobManager.getJob(id);
+  if (!job) throw new Error(`Export job ${id} was not found`);
+  if (job.cancelled || !EXPORT_TEMP_INPUT_WRITABLE_STATUSES.has(job.status)) {
+    throw new Error(`Cannot write temp input for export job ${id} while it is ${job.status}`);
+  }
+  return job;
+}
+
+function aspectRatioFromProfile(profile: NomiRenderManifestV1["profile"]): TimelineMp4ExportRequest["aspectRatio"] {
+  const ratio = profile.width / profile.height;
+  const candidates: Array<{ value: NonNullable<TimelineMp4ExportRequest["aspectRatio"]>; ratio: number }> = [
+    { value: "16:9", ratio: 16 / 9 },
+    { value: "9:16", ratio: 9 / 16 },
+    { value: "1:1", ratio: 1 },
+    { value: "4:5", ratio: 4 / 5 },
+    { value: "3:4", ratio: 3 / 4 },
+    { value: "4:3", ratio: 4 / 3 },
+    { value: "21:9", ratio: 21 / 9 },
+  ];
+  return candidates.sort((a, b) => Math.abs(a.ratio - ratio) - Math.abs(b.ratio - ratio))[0]?.value || "16:9";
+}
+
+function resolutionFromProfile(profile: NomiRenderManifestV1["profile"]): TimelineMp4ExportRequest["resolution"] {
+  return Math.max(profile.width, profile.height) <= 1280 ? "720p" : "1080p";
+}
+
+export async function writeExportTempInput(payload: unknown): Promise<{ ok: true; size: number }> {
+  const raw = (payload || {}) as ExportTempInputRequest;
+  const job = requireWritableExportJob(raw.jobId);
+  const result = appendExportTempInputChunk(job, raw.chunk as never);
+  exportJobManager.updateJob(job.id, {
+    status: job.status === "queued" ? "preparing" : job.status,
+    progress: { ratio: Math.max(job.progress.ratio, 0.08), stage: job.status === "queued" ? "preparing" : job.status, message: "Receiving WebM input" },
+  });
+  return result;
+}
+
+export async function finishExportTempInput(payload: unknown): Promise<unknown> {
+  const raw = (payload || {}) as ExportTempInputRequest;
+  const job = requireWritableExportJob(raw.jobId);
+  try {
+    const { inputPath } = finishExportTempInputFile(job);
+    const profile = job.manifest.profile;
+    exportJobManager.updateJob(job.id, {
+      status: "encoding",
+      progress: { ratio: Math.max(job.progress.ratio, 0.86), stage: "encoding", message: "Encoding MP4" },
+    });
+    const result = await transcodeWebmFileToMp4({
+      projectDir: job.projectDir,
+      inputPath,
+      outputName: job.outputName || "nomi-export",
+      resolution: resolutionFromProfile(profile),
+      aspectRatio: aspectRatioFromProfile(profile),
+      quality: profile.quality || "standard",
+      fps: profile.fps || job.manifest.timeline.fps || 30,
+    });
+    exportJobManager.completeJob(job.id, {
+      outputPath: result.absolutePath,
+      relativeOutputPath: result.relativePath,
+      bytes: result.size,
+    });
+    return result;
+  } catch (error) {
+    exportJobManager.failJob(job.id, error);
+    throw error;
+  } finally {
+    removeExportTempInput(job);
+  }
+}
+
+export function subscribeExportJobEvents(listener: (event: ExportJobEvent) => void): () => void {
+  return exportJobManager.onEvent(listener);
+}
+
 export async function startTimelineMp4Export(payload: unknown): Promise<unknown> {
   const raw = (payload || {}) as TimelineMp4ExportRequest;
   const projectId = String(raw.projectId || "").trim();
@@ -483,9 +638,31 @@ export async function startTimelineMp4Export(payload: unknown): Promise<unknown>
     inputBytes: bufferFromExportBytes(raw.webmBytes),
     outputName: raw.outputName || "nomi-export",
     resolution: raw.resolution || "1080p",
+    aspectRatio: raw.aspectRatio || "16:9",
     quality: raw.quality || "standard",
     fps: raw.fps || 30,
   });
+}
+
+export function showExportInFolder(payload: unknown): { ok: true } {
+  const raw = (payload || {}) as ShowExportInFolderRequest;
+  const projectId = String(raw.projectId || "").trim();
+  const relativePath = String(raw.relativePath || "").trim();
+  if (!projectId) throw new Error("打开导出位置失败：缺少项目 ID");
+  if (!relativePath) throw new Error("打开导出位置失败：缺少导出文件路径");
+  let normalized: string;
+  try {
+    normalized = assertProjectExportRelativePath(relativePath);
+  } catch {
+    throw new Error("打开导出位置失败：只能打开当前项目 exports 文件夹内的文件");
+  }
+  const resolved = resolveProjectRelativePath(projectId, normalized);
+  if (!fs.existsSync(resolved)) throw new Error("打开导出位置失败：导出文件不存在");
+  // Lazy require keeps runtime.ts usable in tests that do not initialize Electron shell.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { shell } = require("electron") as typeof import("electron");
+  shell.showItemInFolder(resolved);
+  return { ok: true };
 }
 
 function catalogPath(): string {

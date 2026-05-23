@@ -1,7 +1,9 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { createExportTempDir, createSafeOutputPaths } from "./exportPaths";
+import { buildWebmToMp4Args } from "./ffmpegCommandBuilder";
+import type { ExportProfile } from "./exportTypes";
 
 export type FfmpegProcessResult = {
   code: number | null;
@@ -16,9 +18,14 @@ export type TranscodeWebmToMp4Options = {
   outputName?: string;
   ffmpegPath?: string;
   resolution?: "720p" | "1080p";
+  aspectRatio?: "16:9" | "9:16" | "1:1" | "4:5" | "3:4" | "4:3" | "21:9";
   quality?: "small" | "standard" | "high";
   fps?: number;
   runProcess?: RunFfmpegProcess;
+};
+
+export type TranscodeWebmFileToMp4Options = Omit<TranscodeWebmToMp4Options, "inputBytes"> & {
+  inputPath: string;
 };
 
 export type TimelineMp4ExportResult = {
@@ -32,11 +39,45 @@ const RESOLUTION_SIZE: Record<"720p" | "1080p", { width: number; height: number 
   "1080p": { width: 1920, height: 1080 },
 };
 
-const QUALITY_CRF: Record<"small" | "standard" | "high", string> = {
-  small: "28",
-  standard: "23",
-  high: "18",
+const ASPECT_RATIO_VALUE: Record<NonNullable<TranscodeWebmToMp4Options["aspectRatio"]>, number> = {
+  "16:9": 16 / 9,
+  "9:16": 9 / 16,
+  "1:1": 1,
+  "4:5": 4 / 5,
+  "3:4": 3 / 4,
+  "4:3": 4 / 3,
+  "21:9": 21 / 9,
 };
+
+function even(value: number): number {
+  return Math.max(2, Math.round(value / 2) * 2);
+}
+
+export function exportDimensionsForPreset(
+  resolution: "720p" | "1080p" = "1080p",
+  aspectRatio: TranscodeWebmToMp4Options["aspectRatio"] = "16:9",
+): { width: number; height: number } {
+  if (!aspectRatio || aspectRatio === "16:9") return RESOLUTION_SIZE[resolution];
+  const base = resolution === "720p" ? 720 : 1080;
+  const ratio = ASPECT_RATIO_VALUE[aspectRatio] || ASPECT_RATIO_VALUE["16:9"];
+  if (ratio >= 1) return { width: even(base * ratio), height: even(base) };
+  return { width: even(base), height: even(base / ratio) };
+}
+
+function exportProfileFromLegacyOptions(options: TranscodeWebmFileToMp4Options): ExportProfile {
+  const dimensions = exportDimensionsForPreset(options.resolution || "1080p", options.aspectRatio || "16:9");
+  return {
+    preset: "publish",
+    container: "mp4",
+    videoCodec: "h264",
+    audioCodec: "none",
+    width: dimensions.width,
+    height: dimensions.height,
+    fps: Math.max(1, Math.floor(options.fps || 30)),
+    pixelFormat: "yuv420p",
+    quality: options.quality || "standard",
+  };
+}
 
 function executablePathForRuntime(candidate: string): string {
   if (!candidate.includes("app.asar")) return candidate;
@@ -83,28 +124,6 @@ export function resolveFfmpegPath(explicitPath?: string, options: ResolveFfmpegP
   return candidates.map(executablePathForRuntime).find((candidate) => commandExists(candidate, options.pathEnv)) || "";
 }
 
-function sanitizeOutputBaseName(value: string | undefined): string {
-  const cleaned = String(value || "nomi-export")
-    .trim()
-    .replace(/\.[a-z0-9]+$/i, "")
-    .replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]+/g, "-")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "");
-  return cleaned || "nomi-export";
-}
-
-function uniqueOutputPath(exportsDir: string, outputName?: string): string {
-  const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
-  const base = `${sanitizeOutputBaseName(outputName)}-${stamp}`;
-  let candidate = path.join(exportsDir, `${base}.mp4`);
-  let suffix = 2;
-  while (fs.existsSync(candidate)) {
-    candidate = path.join(exportsDir, `${base}-${suffix}.mp4`);
-    suffix += 1;
-  }
-  return candidate;
-}
-
 function defaultRunProcess(command: string, args: string[]): Promise<FfmpegProcessResult> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, { windowsHide: true });
@@ -117,40 +136,32 @@ function defaultRunProcess(command: string, args: string[]): Promise<FfmpegProce
   });
 }
 
-export async function transcodeWebmToMp4(options: TranscodeWebmToMp4Options): Promise<TimelineMp4ExportResult> {
+export async function transcodeWebmFileToMp4(options: TranscodeWebmFileToMp4Options): Promise<TimelineMp4ExportResult> {
   const ffmpegPath = resolveFfmpegPath(options.ffmpegPath);
   if (!ffmpegPath) {
     throw new Error("导出失败：MP4 编码组件缺失，请重新安装 Nomi。你不需要单独安装 FFmpeg。");
   }
-  if (!options.inputBytes || options.inputBytes.byteLength <= 0) {
+
+  const inputPath = path.resolve(options.inputPath);
+  if (!fs.existsSync(inputPath)) {
+    throw new Error("导出失败：输入视频不存在");
+  }
+  const inputStat = fs.statSync(inputPath);
+  if (!inputStat.isFile() || inputStat.size <= 0) {
     throw new Error("导出失败：输入视频为空");
   }
 
   const projectDir = path.resolve(options.projectDir);
-  const exportsDir = path.join(projectDir, "exports");
-  const cacheParent = path.join(projectDir, "cache");
-  fs.mkdirSync(exportsDir, { recursive: true });
-  fs.mkdirSync(cacheParent, { recursive: true });
-  const tempDir = fs.mkdtempSync(path.join(cacheParent, "export-"));
-  const inputPath = path.join(tempDir, "input.webm");
-  const outputPath = uniqueOutputPath(exportsDir, options.outputName);
-  fs.writeFileSync(inputPath, options.inputBytes);
+  const outputPaths = createSafeOutputPaths({ projectDir, outputName: options.outputName, extension: "mp4" });
+  const outputPath = outputPaths.finalPath;
+  const partialOutputPath = outputPaths.partialPath;
 
-  const resolution = RESOLUTION_SIZE[options.resolution || "1080p"];
-  const fps = Math.max(1, Math.floor(options.fps || 30));
-  const vf = `scale=${resolution.width}:${resolution.height}:force_original_aspect_ratio=decrease,pad=${resolution.width}:${resolution.height}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`;
-  const args = [
-    "-y",
-    "-i", inputPath,
-    "-an",
-    "-vf", vf,
-    "-r", String(fps),
-    "-c:v", "libx264",
-    "-preset", "medium",
-    "-crf", QUALITY_CRF[options.quality || "standard"],
-    "-movflags", "+faststart",
-    outputPath,
-  ];
+  const args = buildWebmToMp4Args({
+    inputPath,
+    outputPath: partialOutputPath,
+    profile: exportProfileFromLegacyOptions(options),
+    noAudio: true,
+  });
 
   try {
     const runProcess = options.runProcess || defaultRunProcess;
@@ -159,13 +170,36 @@ export async function transcodeWebmToMp4(options: TranscodeWebmToMp4Options): Pr
       const detail = result.stderr.trim() || `ffmpeg exited with code ${result.code}`;
       throw new Error(`导出失败：${detail}`);
     }
-    const stat = fs.statSync(outputPath);
+    const stat = fs.statSync(partialOutputPath);
     if (stat.size <= 0) throw new Error("导出失败：MP4 文件为空");
+    fs.renameSync(partialOutputPath, outputPath);
+    const finalStat = fs.statSync(outputPath);
     return {
       absolutePath: outputPath,
-      relativePath: path.relative(projectDir, outputPath).split(path.sep).join("/"),
-      size: stat.size,
+      relativePath: outputPaths.relativeFinalPath,
+      size: finalStat.size,
     };
+  } finally {
+    fs.rmSync(partialOutputPath, { force: true });
+  }
+}
+
+export async function transcodeWebmToMp4(options: TranscodeWebmToMp4Options): Promise<TimelineMp4ExportResult> {
+  if (!options.inputBytes || options.inputBytes.byteLength <= 0) {
+    throw new Error("导出失败：输入视频为空");
+  }
+
+  const projectDir = path.resolve(options.projectDir);
+  const tempDir = createExportTempDir(projectDir, `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  const inputPath = path.join(tempDir, "input.webm");
+  fs.writeFileSync(inputPath, options.inputBytes);
+
+  try {
+    return await transcodeWebmFileToMp4({
+      ...options,
+      projectDir,
+      inputPath,
+    });
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

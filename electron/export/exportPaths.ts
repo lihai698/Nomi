@@ -1,0 +1,76 @@
+import fs from "node:fs";
+import path from "node:path";
+
+export function ensureExportDirs(projectDir: string): { exportsDir: string; cacheDir: string } {
+  const resolvedProjectDir = path.resolve(projectDir);
+  const exportsDir = path.join(resolvedProjectDir, "exports");
+  const cacheDir = path.join(resolvedProjectDir, "cache");
+  fs.mkdirSync(exportsDir, { recursive: true });
+  fs.mkdirSync(cacheDir, { recursive: true });
+  return { exportsDir, cacheDir };
+}
+
+function sanitizeOutputBaseName(value: string | undefined): string {
+  const cleaned = String(value || "nomi-export")
+    .trim()
+    .replace(/\.[a-z0-9]+$/i, "")
+    .replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return cleaned || "nomi-export";
+}
+
+function sanitizePathSegment(value: string): string {
+  return String(value || "")
+    .trim()
+    .replace(/[^a-zA-Z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "") || "job";
+}
+
+export function createExportTempDir(projectDir: string, jobId: string): string {
+  const { cacheDir } = ensureExportDirs(projectDir);
+  const tempDir = path.join(cacheDir, `export-${sanitizePathSegment(jobId)}`);
+  fs.mkdirSync(tempDir, { recursive: true });
+  return tempDir;
+}
+
+export function createSafeOutputPaths(options: {
+  projectDir: string;
+  outputName?: string;
+  extension: "mp4" | "webm";
+}): { finalPath: string; partialPath: string; relativeFinalPath: string } {
+  const { exportsDir } = ensureExportDirs(options.projectDir);
+  const resolvedProjectDir = path.resolve(options.projectDir);
+  const stamp = new Date().toISOString().replace(/[-:T]/g, "").slice(0, 12);
+  const base = `${sanitizeOutputBaseName(options.outputName)}-${stamp}`;
+  let finalPath = path.join(exportsDir, `${base}.${options.extension}`);
+  let suffix = 2;
+  while (fs.existsSync(finalPath) || fs.existsSync(partialPathFor(finalPath, options.extension))) {
+    finalPath = path.join(exportsDir, `${base}-${suffix}.${options.extension}`);
+    suffix += 1;
+  }
+  return {
+    finalPath,
+    partialPath: partialPathFor(finalPath, options.extension),
+    relativeFinalPath: path.relative(resolvedProjectDir, finalPath).split(path.sep).join("/"),
+  };
+}
+
+function partialPathFor(finalPath: string, extension: "mp4" | "webm"): string {
+  return finalPath.replace(new RegExp(`\\.${extension}$`), `.partial.${extension}`);
+}
+
+export function assertProjectExportRelativePath(relativePath: string): string {
+  const normalized = String(relativePath || "").trim().replace(/\\/g, "/");
+  if (
+    !normalized.startsWith("exports/") ||
+    normalized.includes("..") ||
+    normalized.startsWith("/") ||
+    /^[a-zA-Z]:\//.test(normalized) ||
+    path.isAbsolute(normalized)
+  ) {
+    throw new Error("Path must be relative to the current project's exports folder");
+  }
+  return normalized;
+}

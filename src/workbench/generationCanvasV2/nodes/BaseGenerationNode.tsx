@@ -1,5 +1,5 @@
 import React from 'react'
-import { IconGrid3x3, IconLayoutGrid, IconMaximize, IconUpload } from '@tabler/icons-react'
+import { IconGripVertical, IconGrid3x3, IconLayoutGrid, IconMaximize, IconUpload } from '@tabler/icons-react'
 import { cn } from '../../../utils/cn'
 import type { GenerationCanvasNode } from '../model/generationCanvasTypes'
 import { useWorkbenchStore } from '../../workbenchStore'
@@ -23,6 +23,10 @@ import {
   isImageLikeGenerationNodeKind,
   isVideoLikeGenerationNodeKind,
 } from '../model/generationNodeKinds'
+import {
+  canDragGenerationNodeToTimeline,
+  TIMELINE_DRAG_HANDLE_LABEL,
+} from '../model/timelineDragAffordance'
 
 const STATUS_LABEL: Record<string, string> = {
   queued: '排队中',
@@ -396,13 +400,26 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
     }
   }
 
-  const handleTimelineDragStart = (event: React.DragEvent<HTMLElement>, resultId?: string) => {
+  const handleTimelineDragStart = (event: React.DragEvent<HTMLElement>) => {
     event.stopPropagation()
     event.dataTransfer.effectAllowed = 'copy'
     event.dataTransfer.setData(
       TIMELINE_GENERATION_NODE_DRAG_MIME,
-      encodeTimelineGenerationNodeDragPayload(node, resultId),
+      encodeTimelineGenerationNodeDragPayload(node),
     )
+  }
+
+  const handleAddToTimelineAtPlayhead = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    const timeline = useWorkbenchStore.getState().timeline
+    const startFrame = timeline.playheadFrame
+    const clip = buildClipFromGenerationNode(node, {
+      fps: timeline.fps,
+      startFrame,
+    })
+    if (!clip) return
+    useWorkbenchStore.getState().addTimelineClipAtFrame(clip, clip.type, startFrame)
   }
 
   const handleResizePointerDown = (direction: ResizeDirection) => (event: React.PointerEvent<HTMLButtonElement>) => {
@@ -495,7 +512,7 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
   const isGenerating = status === 'queued' || status === 'running'
   const generationState = useGenerationCanvasStore.getState()
   const canGenerate = canRunGenerationNode(node, { nodes: generationState.nodes, edges: generationState.edges }) && !isGenerating
-  const canSendToTimeline = hasResult && status !== 'error'
+  const canSendToTimeline = canDragGenerationNodeToTimeline(node, { readOnly })
   const showStatusBadge = status === 'queued' || status === 'running' || status === 'error'
   const composerLayout = floatingComposerLayout(visualSize.width, visualSize.height, node.kind)
   const nodeExecutionKind = getGenerationNodeExecutionKind(node.kind)
@@ -892,29 +909,41 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
         )}
       </div>
 
-      {canSendToTimeline && !readOnly ? (
-        <WorkbenchButton
+      {canSendToTimeline ? (
+        <button
           className={cn(
-            'generation-canvas-v2-node__timeline-drag',
-            'absolute top-1/2 right-[-26px] z-[7]',
-            'inline-grid grid-rows-[repeat(3,1fr)] items-center justify-center gap-[3px]',
-            'w-[18px] h-[42px] m-0 py-2 px-[5px] border-0 rounded-full',
-            'bg-nomi-paper/[0.8] text-nomi-ink-50 font-[inherit]',
-            'cursor-grab backdrop-blur-[8px] shadow-nomi-sm',
-            'opacity-0 -translate-y-1/2 transition-[opacity,color,background] duration-150 ease-out',
-            'active:cursor-grabbing',
-            'hover:bg-nomi-paper hover:text-nomi-ink-80',
+            'generation-canvas-v2-node__timeline-drag group',
+            'absolute top-1/2 right-[-42px] z-[7]',
+            'inline-flex items-center justify-center',
+            'w-8 h-12 m-0 p-0 border border-[rgba(18,24,38,0.08)] rounded-full',
+            'bg-nomi-paper/[0.94] text-nomi-ink-60 font-[inherit]',
+            'cursor-grab backdrop-blur-[10px] shadow-[0_10px_26px_rgba(18,24,38,0.14)]',
+            '-translate-y-1/2 transition-[transform,color,background,box-shadow] duration-150 ease-out',
+            'active:cursor-grabbing active:scale-[0.96]',
+            'hover:bg-white hover:text-nomi-ink hover:shadow-[0_12px_30px_rgba(18,24,38,0.18)]',
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--workbench-accent)] focus-visible:ring-offset-2',
           )}
-          aria-label="拖到时间线"
-          title="拖到时间线"
+          type="button"
+          aria-label={TIMELINE_DRAG_HANDLE_LABEL}
+          title={TIMELINE_DRAG_HANDLE_LABEL}
           draggable
-          onDragStart={(event) => handleTimelineDragStart(event)}
+          onClick={handleAddToTimelineAtPlayhead}
+          onDragStart={handleTimelineDragStart}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <span className={cn('block w-2 h-[1.5px] rounded-full bg-current')} />
-          <span className={cn('block w-2 h-[1.5px] rounded-full bg-current')} />
-          <span className={cn('block w-2 h-[1.5px] rounded-full bg-current')} />
-        </WorkbenchButton>
+          <IconGripVertical size={18} stroke={2.1} aria-hidden="true" />
+          <span
+            className={cn(
+              'pointer-events-none absolute left-[calc(100%+8px)] top-1/2 -translate-y-1/2',
+              'whitespace-nowrap rounded-full px-2.5 py-1.5',
+              'bg-[rgba(18,24,38,0.92)] text-white text-[11px] font-medium leading-none',
+              'opacity-0 translate-x-[-4px] transition-[opacity,transform] duration-150',
+              'group-hover:opacity-100 group-hover:translate-x-0 group-focus-visible:opacity-100 group-focus-visible:translate-x-0',
+            )}
+          >
+            {TIMELINE_DRAG_HANDLE_LABEL}
+          </span>
+        </button>
       ) : null}
 
       {selected && !readOnly && node.kind !== 'panorama' ? (

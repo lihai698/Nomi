@@ -1,3 +1,5 @@
+import type { ExportJobEvent, ExportJobSnapshot } from '../../electron/export/exportJobManager'
+
 export type DesktopAssetDto = {
   id: string
   name: string
@@ -8,20 +10,33 @@ export type DesktopAssetDto = {
   data: Record<string, unknown>
 }
 
-export type DesktopMp4ExportStartPayload = {
-  projectId: string
-  webmBytes: ArrayBuffer
-  outputName?: string
-  resolution?: '720p' | '1080p'
-  quality?: 'small' | 'standard' | 'high'
-  fps?: number
-}
-
 export type DesktopMp4ExportResult = {
   absolutePath: string
   relativePath: string
   size: number
 }
+
+export type DesktopExportJobStartPayload = {
+  projectId: string
+  manifest: unknown
+  outputName?: string
+}
+
+export type DesktopExportJobStartResult = {
+  jobId: string
+}
+
+export type DesktopExportTempInputWritePayload = {
+  jobId: string
+  chunk: ArrayBuffer | Uint8Array | number[]
+}
+
+export type DesktopExportTempInputWriteResult = {
+  ok: true
+  size: number
+}
+
+export type { ExportJobEvent, ExportJobSnapshot }
 
 export type DesktopBridge = {
   platform: string
@@ -55,8 +70,13 @@ export type DesktopBridge = {
     }) => Promise<DesktopAssetDto>
   }
   exports: {
-    start: (payload: DesktopMp4ExportStartPayload) => Promise<DesktopMp4ExportResult>
-    showInFolder: (filePath: string) => Promise<{ ok: boolean }>
+    startJob: (payload: DesktopExportJobStartPayload) => Promise<DesktopExportJobStartResult>
+    writeTempInput: (payload: DesktopExportTempInputWritePayload) => Promise<DesktopExportTempInputWriteResult>
+    finishTempInput: (payload: { jobId: string }) => Promise<DesktopMp4ExportResult>
+    status: (jobId: string) => Promise<ExportJobSnapshot>
+    cancel: (jobId: string) => Promise<{ ok: boolean }>
+    onEvent: (callback: (event: ExportJobEvent) => void) => () => void
+    showInFolder: (payload: { projectId: string; relativePath: string }) => Promise<{ ok: boolean }>
   }
   tasks: {
     run: (payload: unknown) => Promise<unknown>

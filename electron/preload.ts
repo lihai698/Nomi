@@ -25,8 +25,19 @@ contextBridge.exposeInMainWorld("nomiDesktop", {
     importFile: (payload: unknown) => ipcRenderer.invoke("nomi:assets:import-file", payload),
   },
   exports: {
-    start: (payload: unknown) => ipcRenderer.invoke("nomi:exports:start", payload),
-    showInFolder: (filePath: string) => ipcRenderer.invoke("nomi:exports:show-in-folder", filePath),
+    startJob: (payload: unknown) => ipcRenderer.invoke("nomi:exports:start-job", payload),
+    writeTempInput: (payload: unknown) => ipcRenderer.invoke("nomi:exports:write-temp-input", payload),
+    finishTempInput: (payload: unknown) => ipcRenderer.invoke("nomi:exports:finish-temp-input", payload),
+    status: (jobId: string) => ipcRenderer.invoke("nomi:exports:status", jobId),
+    cancel: (jobId: string) => ipcRenderer.invoke("nomi:exports:cancel", jobId),
+    onEvent: (callback: (event: unknown) => void) => {
+      const listener = (_event: unknown, payload: unknown) => callback(payload);
+      ipcRenderer.on("nomi:exports:event", listener as never);
+      return () => {
+        ipcRenderer.removeListener("nomi:exports:event", listener as never);
+      };
+    },
+    showInFolder: (payload: unknown) => ipcRenderer.invoke("nomi:exports:show-in-folder", payload),
   },
   tasks: {
     run: (payload: unknown) => ipcRenderer.invoke("nomi:tasks:run", payload),
