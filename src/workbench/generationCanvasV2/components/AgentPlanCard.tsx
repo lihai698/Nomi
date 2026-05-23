@@ -1,6 +1,9 @@
 import React from 'react'
 import { cn } from '../../../utils/cn'
 import { WorkbenchButton } from '../../../design'
+import { summarizeAgentPlan, type AgentPlanSummary } from './agentPlanSummary'
+
+export { summarizeAgentPlan }
 
 export type PendingToolCall = {
   toolCallId: string
@@ -9,87 +12,8 @@ export type PendingToolCall = {
   confirm: (decision: { ok: true; result?: unknown } | { ok: false; message?: string }) => Promise<void>
 }
 
-type PlannedNode = {
-  clientId: string
-  kind: string
-  title: string
-  prompt: string
-  position?: { x: number; y: number }
-}
-
-type PlannedEdge = {
-  sourceClientId: string
-  targetClientId: string
-}
-
-/**
- * Inspect a sequence of pending tool calls and aggregate them into a
- * single "storyboard plan" if the agent issued `create_canvas_nodes`
- * (optionally followed by `connect_canvas_edges`). Returns `null` when
- * the pending calls don't form a recognizable plan and should fall back
- * to the per-call confirmation UI.
- */
-export function summarizeAgentPlan(calls: readonly PendingToolCall[]): {
-  summary: string
-  nodes: PlannedNode[]
-  edges: PlannedEdge[]
-  createCallId: string
-  connectCallId: string | null
-} | null {
-  const createCall = calls.find((call) => call.toolName === 'create_canvas_nodes')
-  if (!createCall) return null
-  const createArgs = (createCall.args && typeof createCall.args === 'object')
-    ? createCall.args as Record<string, unknown>
-    : {}
-  const rawNodes = Array.isArray(createArgs.nodes) ? createArgs.nodes : []
-  if (rawNodes.length === 0) return null
-  const nodes: PlannedNode[] = rawNodes.map((raw, index) => {
-    const node = (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {}
-    const position = (node.position && typeof node.position === 'object') ? node.position as Record<string, unknown> : null
-    return {
-      clientId: typeof node.clientId === 'string' && node.clientId.trim()
-        ? node.clientId
-        : `n${index + 1}`,
-      kind: typeof node.kind === 'string' ? node.kind : 'image',
-      title: typeof node.title === 'string' ? node.title : `镜头 ${index + 1}`,
-      prompt: typeof node.prompt === 'string' ? node.prompt : '',
-      ...(position && typeof position.x === 'number' && typeof position.y === 'number'
-        ? { position: { x: position.x, y: position.y } }
-        : {}),
-    }
-  })
-
-  const connectCall = calls.find((call) => call.toolName === 'connect_canvas_edges')
-  let edges: PlannedEdge[] = []
-  if (connectCall) {
-    const connectArgs = (connectCall.args && typeof connectCall.args === 'object')
-      ? connectCall.args as Record<string, unknown>
-      : {}
-    const rawEdges = Array.isArray(connectArgs.edges) ? connectArgs.edges : []
-    edges = rawEdges
-      .map((raw) => (raw && typeof raw === 'object') ? raw as Record<string, unknown> : {})
-      .map((edge) => ({
-        sourceClientId: String(edge.sourceClientId || edge.source || '').trim(),
-        targetClientId: String(edge.targetClientId || edge.target || '').trim(),
-      }))
-      .filter((edge) => edge.sourceClientId && edge.targetClientId)
-  }
-
-  const summary = typeof createArgs.summary === 'string' && createArgs.summary.trim()
-    ? createArgs.summary.trim()
-    : `${nodes.length} 个镜头 + ${edges.length} 条引用边`
-
-  return {
-    summary,
-    nodes,
-    edges,
-    createCallId: createCall.toolCallId,
-    connectCallId: connectCall?.toolCallId ?? null,
-  }
-}
-
 type AgentPlanCardProps = {
-  plan: NonNullable<ReturnType<typeof summarizeAgentPlan>>
+  plan: AgentPlanSummary
   /** Resolve a single tool call with the given decision (used internally). */
   resolveCall: (
     toolCallId: string,
