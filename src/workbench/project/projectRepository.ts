@@ -18,6 +18,7 @@ import type {
 import type { WorkbenchDocument } from "../workbenchTypes";
 import { assertWorkbenchProjectMediaUrlsPersistable } from "./projectMediaMigration";
 import { getDesktopBridge } from "../../desktop/bridge";
+import { normalizeCategories } from "./projectCategories";
 
 function extractCanvasThumbnailUrls(
     nodes: GenerationCanvasNode[],
@@ -260,6 +261,7 @@ function normalizePayload(input: unknown): WorkbenchProjectPayload {
         ),
         timeline: normalizeTimeline(payload.timeline),
         generationCanvas: payload.generationCanvas,
+        categories: normalizeCategories(payload.categories),
     };
 }
 

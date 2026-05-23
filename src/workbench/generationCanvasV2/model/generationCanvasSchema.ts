@@ -71,6 +71,7 @@ export const generationCanvasNodeSchema = z.object({
   status: generationNodeStatusSchema.optional(),
   error: z.string().optional(),
   meta: z.record(z.unknown()).optional(),
+  categoryId: z.string().optional(),
 })
 
 export const generationCanvasEdgeSchema = z.object({

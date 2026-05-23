@@ -68,6 +68,12 @@ export type GenerationCanvasNode = {
   status?: GenerationNodeStatus
   error?: string
   meta?: Record<string, unknown>
+  /**
+   * Phase E: category this node belongs to within the project's directory tree.
+   * Legacy v0.4 nodes have no value here; the project loader normalizes them
+   * via projectCategoryMigration (E4). Optional for backward compat.
+   */
+  categoryId?: string
 }
 
 export type GenerationCanvasEdge = {

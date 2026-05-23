@@ -5,6 +5,7 @@ import type { TimelineState } from '../timeline/timelineTypes'
 import { createDefaultWorkbenchDocument, type WorkbenchDocument } from '../workbenchTypes'
 import { createDefaultGenerationCanvasSnapshot } from '../generationCanvasV2/store/generationCanvasDefaults'
 import type { GenerationCanvasSnapshot } from '../generationCanvasV2/model/generationCanvasTypes'
+import { cloneBuiltinCategories, projectCategorySchema, type ProjectCategory } from './projectCategories'
 
 export const workbenchProjectRecordVersionSchema = z.literal(1)
 
@@ -40,6 +41,7 @@ export const workbenchProjectPayloadSchema = z.object({
     })),
   }),
   generationCanvas: generationCanvasSnapshotSchema,
+  categories: z.array(projectCategorySchema).optional(),
 })
 
 export const workbenchProjectRecordSchema = workbenchProjectSummarySchema.extend({
@@ -63,6 +65,7 @@ export type WorkbenchProjectPayload = {
   workbenchDocument: WorkbenchDocument
   timeline: TimelineState
   generationCanvas: GenerationCanvasSnapshot
+  categories?: ProjectCategory[]
 }
 
 export type WorkbenchProjectRecordV1 = WorkbenchProjectSummary & {
@@ -86,5 +89,6 @@ export function createDefaultWorkbenchProjectPayload(): WorkbenchProjectPayload 
     workbenchDocument: createDefaultWorkbenchDocument(),
     timeline: createDefaultTimeline(),
     generationCanvas: createDefaultGenerationCanvasSnapshot(),
+    categories: cloneBuiltinCategories(),
   }
 }

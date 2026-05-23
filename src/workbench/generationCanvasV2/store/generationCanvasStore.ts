@@ -286,12 +286,14 @@ function normalizeGenerationCanvasSnapshot(input: unknown): GenerationCanvasSnap
         const x = typeof positionRaw.x === 'number' && Number.isFinite(positionRaw.x) ? positionRaw.x : 0
         const y = typeof positionRaw.y === 'number' && Number.isFinite(positionRaw.y) ? positionRaw.y : 0
         if (!id || !kind) return []
+        const categoryId = typeof node.categoryId === 'string' && node.categoryId.trim() ? node.categoryId.trim() : undefined
         return [{
           ...(node as GenerationCanvasNode),
           id,
           kind,
           title: typeof node.title === 'string' ? node.title : id,
           position: { x, y },
+          ...(categoryId ? { categoryId } : {}),
         }]
       })
     : []
