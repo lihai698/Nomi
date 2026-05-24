@@ -5,6 +5,7 @@ export type GenerationNodeRenderProps<TNode = unknown> = {
   node: TNode
   selected: boolean
   readOnly?: boolean
+  focusFlash?: boolean
 }
 
 export type GenerationNodeComponent = ComponentType<GenerationNodeRenderProps<any>>

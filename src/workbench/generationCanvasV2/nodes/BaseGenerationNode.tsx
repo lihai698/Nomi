@@ -1,5 +1,5 @@
 import React from 'react'
-import { IconGripVertical, IconGrid3x3, IconInfoCircle, IconLayoutGrid, IconMaximize, IconUpload } from '@tabler/icons-react'
+import { IconGitBranch, IconGripVertical, IconGrid3x3, IconInfoCircle, IconLayoutGrid, IconMaximize, IconUpload } from '@tabler/icons-react'
 import ProvenancePanel from './ProvenancePanel'
 import { cn } from '../../../utils/cn'
 import type { GenerationCanvasNode } from '../model/generationCanvasTypes'
@@ -39,6 +39,7 @@ export type BaseGenerationNodeProps = {
   node: GenerationCanvasNode
   selected: boolean
   readOnly?: boolean
+  focusFlash?: boolean
 }
 
 type FloatingComposerLayout = {
@@ -65,6 +66,7 @@ const MAX_NODE_WIDTH = 680
 const MIN_NODE_HEIGHT = 120
 const MAX_NODE_HEIGHT = 520
 const TIMELINE_TRACK_CLIPS_SELECTOR = '.workbench-timeline-track__clips'
+const FOCUS_GENERATION_NODE_EVENT = 'nomi-focus-generation-node'
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value))
@@ -175,13 +177,16 @@ function findTimelineDropTarget(clientX: number, clientY: number): HTMLElement |
   return element.closest(TIMELINE_TRACK_CLIPS_SELECTOR)
 }
 
-export default function BaseGenerationNode({ node, selected, readOnly = false }: BaseGenerationNodeProps): JSX.Element {
+export default function BaseGenerationNode({ node, selected, readOnly = false, focusFlash = false }: BaseGenerationNodeProps): JSX.Element {
   const selectNode = useGenerationCanvasStore((state) => state.selectNode)
   const captureHistory = useGenerationCanvasStore((state) => state.captureHistory)
   const commitPersistedChange = useGenerationCanvasStore((state) => state.commitPersistedChange)
   const moveNode = useGenerationCanvasStore((state) => state.moveNode)
   const moveSelectedNodes = useGenerationCanvasStore((state) => state.moveSelectedNodes)
   const selectedNodeIds = useGenerationCanvasStore((state) => state.selectedNodeIds)
+  const sourceNode = useGenerationCanvasStore((state) => node.derivedFrom
+    ? state.nodes.find((candidate) => candidate.id === node.derivedFrom)
+    : undefined)
   const startConnection = useGenerationCanvasStore((state) => state.startConnection)
   const connectToNode = useGenerationCanvasStore((state) => state.connectToNode)
   const addNode = useGenerationCanvasStore((state) => state.addNode)
@@ -485,6 +490,13 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
     }
   }
 
+  const handleFocusSourceNode = React.useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault()
+    event.stopPropagation()
+    if (!node.derivedFrom || typeof window === 'undefined') return
+    window.dispatchEvent(new CustomEvent(FOCUS_GENERATION_NODE_EVENT, { detail: { nodeId: node.derivedFrom } }))
+  }, [node.derivedFrom])
+
   const handlePanoramaFileChange = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.currentTarget.files?.[0]
     event.currentTarget.value = ''
@@ -518,6 +530,7 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
   const canSendToTimeline = canDragGenerationNodeToTimeline(node, { readOnly })
   const showStatusBadge = status === 'queued' || status === 'running' || status === 'error'
   const composerLayout = floatingComposerLayout(visualSize.width, visualSize.height, node.kind)
+  const sourceNodeLabel = sourceNode?.title || sourceNode?.id || (node.derivedFrom ? '源节点已不在当前项目' : '')
   const nodeExecutionKind = getGenerationNodeExecutionKind(node.kind)
   const handlePanoramaScreenshot = React.useCallback((screenshot: PanoramaScreenshot) => {
     const { dataUrl, dimensions } = screenshot
@@ -641,6 +654,7 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
       data-kind={node.kind}
       data-expanded={selected ? 'true' : 'false'}
       data-selected={selected ? 'true' : 'false'}
+      data-focus-flash={focusFlash ? 'true' : 'false'}
       data-status={status}
       style={{
         transform: `translate(${node.position.x}px, ${node.position.y}px)`,
@@ -825,6 +839,20 @@ export default function BaseGenerationNode({ node, selected, readOnly = false }:
           >
             {STATUS_LABEL[status] ?? status}
           </span>
+        ) : null}
+        {node.derivedFrom ? (
+          <button
+            type="button"
+            className="generation-canvas-v2-node__derived-badge"
+            aria-label={sourceNode ? `定位源节点：${sourceNodeLabel}` : '源节点已不存在'}
+            title={sourceNode ? `派生自：${sourceNodeLabel}` : '源节点已不存在'}
+            disabled={!sourceNode}
+            onClick={handleFocusSourceNode}
+            onPointerDown={(event) => event.stopPropagation()}
+          >
+            <IconGitBranch size={13} stroke={1.8} aria-hidden="true" />
+            <span>{sourceNode ? '派生' : '源缺失'}</span>
+          </button>
         ) : null}
         {hasResult ? (
           <button

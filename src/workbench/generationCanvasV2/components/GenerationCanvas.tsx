@@ -19,6 +19,7 @@ import '../styles/generationCanvas.css'
 const GENERATION_PROVIDER = 'chatfire'
 const GENERATION_DEFAULT_BASE_URL = 'https://api.chatfire.site'
 const OPEN_MODEL_CATALOG_EVENT = 'nomi-open-model-catalog'
+const FOCUS_GENERATION_NODE_EVENT = 'nomi-focus-generation-node'
 const WHEEL_ZOOM_FACTOR = 1.24
 const WHEEL_ZOOM_DELTA = 120
 const WHEEL_LINE_HEIGHT = 16
@@ -129,6 +130,14 @@ function getSelectedBounds(nodes: readonly GenerationCanvasNode[], selectedNodeI
   }
 }
 
+function centerNodeOffset(node: GenerationCanvasNode, stageSize: { width: number; height: number }, zoom: number): { x: number; y: number } {
+  const size = getNodeSize(node)
+  return {
+    x: Math.round(stageSize.width / 2 - (node.position.x + size.width / 2) * zoom),
+    y: Math.round(stageSize.height / 2 - (node.position.y + size.height / 2) * zoom),
+  }
+}
+
 type CanvasGroupBox = {
   group: NodeGroup
   left: number
@@ -167,6 +176,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
   const allEdges = useGenerationCanvasStore((state) => state.edges)
   const allGroups = useGenerationCanvasStore((state) => state.groups)
   const activeCategoryId = useWorkbenchStore((state) => state.activeCategoryId)
+  const setActiveCategoryId = useWorkbenchStore((state) => state.setActiveCategoryId)
   // Phase E3: filter nodes by active sub-canvas. Nodes with no categoryId
   // fall back to the project default ("shots") so legacy projects keep
   // rendering until E4 migrates them.
@@ -191,6 +201,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
   const copySelectedNodes = useGenerationCanvasStore((state) => state.copySelectedNodes)
   const cutSelectedNodes = useGenerationCanvasStore((state) => state.cutSelectedNodes)
   const pasteNodes = useGenerationCanvasStore((state) => state.pasteNodes)
+  const selectNode = useGenerationCanvasStore((state) => state.selectNode)
   const groupSelectedNodes = useGenerationCanvasStore((state) => state.groupSelectedNodes)
   const ungroupGroups = useGenerationCanvasStore((state) => state.ungroupGroups)
   const moveGroupNodes = useGenerationCanvasStore((state) => state.moveGroupNodes)
@@ -315,6 +326,9 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
   const [isPanning, setIsPanning] = React.useState(false)
   const [activeEdge, setActiveEdge] = React.useState<ActiveEdge | null>(null)
   const activeEdgeId = activeEdge?.id ?? null
+  const [focusFlashNodeId, setFocusFlashNodeId] = React.useState<string | null>(null)
+  const [pendingFocusNodeId, setPendingFocusNodeId] = React.useState<string | null>(null)
+  const focusFlashTimerRef = React.useRef<number | null>(null)
 
   React.useEffect(() => {
     markReady()
@@ -332,6 +346,10 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
   zoomRef.current = zoom
   const nodesRef = React.useRef(nodes)
   nodesRef.current = nodes
+  const allNodesRef = React.useRef(allNodes)
+  allNodesRef.current = allNodes
+  const stageSizeRef = React.useRef(stageSize)
+  stageSizeRef.current = stageSize
 
   const scheduleOffset = React.useCallback((nextOffset: { x: number; y: number }) => {
     offsetRef.current = nextOffset
@@ -351,6 +369,53 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
       offsetFrameRef.current = null
     }
   }, [])
+
+  React.useEffect(() => {
+    const handleFocusNode = (event: Event) => {
+      const detail = (event as CustomEvent<{ nodeId?: unknown }>).detail
+      const nodeId = typeof detail?.nodeId === 'string' ? detail.nodeId : ''
+      if (!nodeId) return
+      const target = allNodesRef.current.find((node) => node.id === nodeId)
+      if (!target) {
+        toast('源节点已不存在', 'warning')
+        return
+      }
+      const targetCategoryId = target.categoryId || 'shots'
+      setActiveCategoryId(targetCategoryId)
+      selectNode(nodeId)
+      setPendingFocusNodeId(nodeId)
+    }
+    window.addEventListener(FOCUS_GENERATION_NODE_EVENT, handleFocusNode)
+    return () => {
+      window.removeEventListener(FOCUS_GENERATION_NODE_EVENT, handleFocusNode)
+      if (focusFlashTimerRef.current !== null) {
+        window.clearTimeout(focusFlashTimerRef.current)
+        focusFlashTimerRef.current = null
+      }
+    }
+  }, [selectNode, setActiveCategoryId])
+
+  React.useEffect(() => {
+    if (!pendingFocusNodeId) return
+    const target = allNodes.find((node) => node.id === pendingFocusNodeId)
+    if (!target) {
+      setPendingFocusNodeId(null)
+      return
+    }
+    const targetCategoryId = target.categoryId || 'shots'
+    if (targetCategoryId !== activeCategoryId) return
+    const targetZoom = categoryViewports[targetCategoryId]?.zoom || zoomRef.current || 1
+    const targetOffset = centerNodeOffset(target, stageSizeRef.current, targetZoom)
+    setZoom(targetZoom)
+    setOffset(targetOffset)
+    setFocusFlashNodeId(pendingFocusNodeId)
+    setPendingFocusNodeId(null)
+    if (focusFlashTimerRef.current !== null) window.clearTimeout(focusFlashTimerRef.current)
+    focusFlashTimerRef.current = window.setTimeout(() => {
+      setFocusFlashNodeId((current) => (current === pendingFocusNodeId ? null : current))
+      focusFlashTimerRef.current = null
+    }, 1400)
+  }, [activeCategoryId, allNodes, categoryViewports, pendingFocusNodeId])
 
   React.useEffect(() => {
     if (readOnly) return undefined
@@ -1021,7 +1086,13 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
                 {visibleNodesForRender.map((node) => {
                   const NodeComponent = getGenerationNodeComponent(node.kind)
                   return (
-                    <NodeComponent key={node.id} node={node} selected={selectedSet.has(node.id)} readOnly={readOnly} />
+                    <NodeComponent
+                      key={node.id}
+                      node={node}
+                      selected={selectedSet.has(node.id)}
+                      readOnly={readOnly}
+                      focusFlash={focusFlashNodeId === node.id}
+                    />
                   )
                 })}
               </React.Suspense>
