@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld("nomiDesktop", {
     save: (projectId: string, record: unknown) => invokeSync("nomi:projects:save", projectId, record),
     delete: (projectId: string) => invokeSync("nomi:projects:delete", projectId),
   },
+  cost: {
+    projectSummary: (projectId: string) => invokeSync("nomi:cost:project-summary", { projectId }),
+  },
   assets: {
     list: (payload: unknown) => ipcRenderer.invoke("nomi:assets:list", payload),
     importRemoteUrl: (payload: unknown) => ipcRenderer.invoke("nomi:assets:import-remote-url", payload),

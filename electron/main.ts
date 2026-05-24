@@ -39,6 +39,7 @@ import {
   upsertModelCatalogVendor,
   upsertModelCatalogVendorApiKey,
   clearModelCatalogVendorApiKey,
+  readProjectCostSummary,
 } from "./runtime";
 
 protocol.registerSchemesAsPrivileged([
@@ -169,6 +170,7 @@ function registerIpc(): void {
   registerSyncIpc("nomi:projects:read", readProject);
   registerSyncIpc("nomi:projects:save", saveProject);
   registerSyncIpc("nomi:projects:delete", deleteProject);
+  registerSyncIpc("nomi:cost:project-summary", readProjectCostSummary);
   registerSyncIpc("nomi:model-catalog:vendors:list", listModelCatalogVendors);
   registerSyncIpc("nomi:model-catalog:models:list", listModelCatalogModels);
   registerSyncIpc("nomi:model-catalog:mappings:list", listModelCatalogMappings);

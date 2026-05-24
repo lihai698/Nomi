@@ -17,6 +17,7 @@ import {
   plannedNodeSchema,
   type CanvasToolName,
 } from "./ai/canvasTools";
+import { logCostEntry, summarizeProjectCost, type CostEntry } from "./cost/costLog";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -2005,6 +2006,17 @@ export async function runTask(payload: unknown): Promise<TaskResult> {
   const asset: TaskResult["assets"][number] = projectId
     ? await localizeTaskAsset(projectId, assetUrl, type, nodeId)
     : { type, url: assetUrl, thumbnailUrl: type === "image" ? assetUrl : null };
+  // E10: log cost estimate for the generation (best-effort)
+  logCostEntry({
+    projectsRoot: getProjectsRoot(),
+    projectId,
+    nodeId,
+    provider: vendor.key,
+    model: model.modelAlias || model.modelKey,
+    kind: type,
+    pixels: request.width && request.height ? request.width * request.height : undefined,
+    vendorRequestId: upstreamTaskId,
+  });
   return { id: upstreamTaskId, kind, status: "succeeded", assets: [asset], raw: providerResponse };
 }
 
@@ -2135,6 +2147,16 @@ export async function runAgentChat(payload: unknown): Promise<unknown> {
     temperature: typeof raw.temperature === "number" ? raw.temperature : 0.7,
   });
 
+  // E10: log cost estimate (best-effort, never throws)
+  logCostEntry({
+    projectsRoot: getProjectsRoot(),
+    projectId: trim(raw.canvasProjectId) || undefined,
+    provider: vendor.key,
+    model: model.modelAlias || model.modelKey,
+    kind: "text",
+    tokens: result.usage?.totalTokens,
+  });
+
   return {
     id: `agent-${crypto.randomUUID()}`,
     text: result.text,
@@ -2147,6 +2169,20 @@ export async function runAgentChat(payload: unknown): Promise<unknown> {
     toolCalls: [],
     artifacts: [],
   };
+}
+
+// ---------------------------------------------------------------------------
+// E10 — Read project cost summary (called via IPC by the renderer)
+// ---------------------------------------------------------------------------
+export function readProjectCostSummary(payload: unknown): {
+  total: number;
+  count: number;
+  byProvider: Record<string, number>;
+  byKind: Record<string, number>;
+} {
+  const projectId = trim((payload as JsonRecord | undefined)?.projectId);
+  if (!projectId) return { total: 0, count: 0, byProvider: {}, byKind: {} };
+  return summarizeProjectCost(getProjectsRoot(), projectId);
 }
 
 // ---------------------------------------------------------------------------

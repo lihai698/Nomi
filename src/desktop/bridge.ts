@@ -47,6 +47,14 @@ export type DesktopBridge = {
     save: (projectId: string, record: unknown) => unknown
     delete: (projectId: string) => { id: string; deleted: boolean }
   }
+  cost: {
+    projectSummary: (projectId: string) => {
+      total: number
+      count: number
+      byProvider: Record<string, number>
+      byKind: Record<string, number>
+    }
+  }
   assets: {
     list: (payload: {
       projectId: string
