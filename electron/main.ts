@@ -41,6 +41,7 @@ import {
   upsertModelCatalogVendorApiKey,
   clearModelCatalogVendorApiKey,
   commitOnboardedModelToCatalog,
+  commitManualOpenAiCompatibleModels,
   resolveOnboardingAgentFromCatalog,
 } from "./runtime";
 import { runOnboardingTrial } from "./ai/onboarding/agent";
@@ -495,6 +496,64 @@ function registerOnboardingIpc(): void {
     session.cancelled = true;
     sendOnboardingEvent(session, { type: "cancelled" });
     return { ok: true };
+  });
+
+  // PRIMARY model-adding path — manual provider entry (BaseURL + key + models).
+  // Deterministic openai-compatible text commit; reuses the single catalog write
+  // path. No forced connectivity test (aligns with opencode; see test-connection).
+  ipcMain.handle("nomi:onboarding:manual-commit", async (_event, payload: Record<string, unknown>) => {
+    try {
+      const result = commitManualOpenAiCompatibleModels({
+        vendorName: String(payload?.vendorName || ""),
+        baseUrl: String(payload?.baseUrl || ""),
+        apiKey: String(payload?.apiKey || ""),
+        models: Array.isArray(payload?.models)
+          ? (payload.models as Array<Record<string, unknown>>).map((m) => ({
+              id: String(m?.id || ""),
+              displayName: m?.displayName ? String(m.displayName) : undefined,
+            }))
+          : [],
+      });
+      return { ok: true, vendorKey: result.vendorKey, committed: result.committed };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message };
+    }
+  });
+
+  // Optional, NON-BLOCKING connectivity probe for the manual form's 测试连接
+  // button. Honest result only — never gates saving. Minimal request body kept
+  // conservative for the widest openai-compatible tolerance.
+  ipcMain.handle("nomi:onboarding:test-connection", async (_event, payload: Record<string, unknown>) => {
+    const baseUrl = String(payload?.baseUrl || "").trim().replace(/\/+$/, "");
+    const apiKey = String(payload?.apiKey || "").trim();
+    const modelId = String(payload?.modelId || "").trim();
+    if (!/^https?:\/\//i.test(baseUrl)) return { ok: false, error: "接入地址需以 http:// 或 https:// 开头" };
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 12_000);
+    try {
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: modelId || "gpt-3.5-turbo",
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 1,
+        }),
+        signal: controller.signal,
+      });
+      if (res.ok) return { ok: true, status: res.status };
+      const text = await res.text().catch(() => "");
+      return { ok: false, status: res.status, error: text.slice(0, 300) || `HTTP ${res.status}` };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { ok: false, error: message };
+    } finally {
+      clearTimeout(timeout);
+    }
   });
 }
 

@@ -14,7 +14,8 @@
  * Auto-commits to catalog on success (the IPC handler does it).
  */
 import React from 'react'
-import { Stack, Group, Text, PasswordInput } from '@mantine/core'
+import { Stack, Group, Text, PasswordInput, ActionIcon, Anchor } from '@mantine/core'
+import { IconPlus, IconTrash } from '@tabler/icons-react'
 import { DesignButton, DesignModal, DesignTextInput } from '../../design'
 import { getDesktopBridge } from '../../desktop/bridge'
 
@@ -56,8 +57,19 @@ export function OnboardingWizard({ opened, onClose, onCommitted }: {
 }): JSX.Element {
   const bridge = getDesktopBridge()
   const [phase, setPhase] = React.useState<Phase>('input')
+  // input has two branches: 'manual' is the primary path (BaseURL + key + models,
+  // breaks the bootstrap deadlock, works for local/text models); 'docs' is the
+  // secondary path (AI reads docs) for image/video models with non-standard APIs.
+  const [inputMode, setInputMode] = React.useState<'manual' | 'docs'>('manual')
   const [docsUrl, setDocsUrl] = React.useState('')
   const [userApiKey, setUserApiKey] = React.useState('')
+  // manual-form state
+  const [vendorName, setVendorName] = React.useState('')
+  const [baseUrl, setBaseUrl] = React.useState('')
+  const [models, setModels] = React.useState<Array<{ id: string; displayName: string }>>([{ id: '', displayName: '' }])
+  const [saving, setSaving] = React.useState(false)
+  const [testState, setTestState] = React.useState<'idle' | 'testing' | 'ok' | 'fail'>('idle')
+  const [testMessage, setTestMessage] = React.useState('')
   const [milestones, setMilestones] = React.useState<Milestone[]>(INITIAL_MILESTONES)
   const [activeMessage, setActiveMessage] = React.useState('正在阅读文档…')
   const [fieldsCount, setFieldsCount] = React.useState(0)
@@ -87,7 +99,74 @@ export function OnboardingWizard({ opened, onClose, onCommitted }: {
     setErrorReason('')
     setErrorHint('')
     setTraceJson(null)
+    // Keep credentials (vendorName/baseUrl/userApiKey) so "再添加一个" under the
+    // same endpoint is one step; only clear the per-add model rows + test result.
+    setModels([{ id: '', displayName: '' }])
+    setTestState('idle')
+    setTestMessage('')
   }, [])
+
+  const updateModel = React.useCallback((index: number, patch: Partial<{ id: string; displayName: string }>) => {
+    setModels(prev => prev.map((m, i) => (i === index ? { ...m, ...patch } : m)))
+  }, [])
+  const addModelRow = React.useCallback(() => {
+    setModels(prev => [...prev, { id: '', displayName: '' }])
+  }, [])
+  const removeModelRow = React.useCallback((index: number) => {
+    setModels(prev => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+  }, [])
+
+  const handleTestConnection = React.useCallback(async () => {
+    if (!bridge?.onboarding?.testConnection) return
+    setTestState('testing')
+    setTestMessage('')
+    const firstModelId = models.find(m => m.id.trim())?.id.trim()
+    const res = await bridge.onboarding.testConnection({
+      baseUrl: baseUrl.trim(),
+      apiKey: userApiKey.trim(),
+      modelId: firstModelId,
+    })
+    if (res.ok) {
+      setTestState('ok')
+      setTestMessage('连接正常')
+    } else {
+      setTestState('fail')
+      setTestMessage(res.error || '连接失败')
+    }
+  }, [bridge, baseUrl, userApiKey, models])
+
+  const handleManualSave = React.useCallback(async () => {
+    if (!bridge?.onboarding?.manualCommit) {
+      setErrorReason('当前环境没有桌面端模块，无法运行。')
+      setPhase('error')
+      return
+    }
+    const cleanModels = models
+      .map(m => ({ id: m.id.trim(), displayName: m.displayName.trim() || undefined }))
+      .filter(m => m.id.length > 0)
+    if (cleanModels.length === 0) return
+    setSaving(true)
+    try {
+      const res = await bridge.onboarding.manualCommit({
+        vendorName: vendorName.trim(),
+        baseUrl: baseUrl.trim(),
+        apiKey: userApiKey.trim(),
+        models: cleanModels,
+      })
+      if (res.ok) {
+        const n = res.committed?.length ?? cleanModels.length
+        setResultLabel(n === 1 ? (res.committed?.[0]?.displayName || cleanModels[0].id) : `${n} 个模型`)
+        setPhase('success')
+        if (res.committed) onCommitted?.(res.committed)
+      } else {
+        setErrorReason('没能保存')
+        setErrorHint(res.error || '请检查接入地址和 API Key')
+        setPhase('error')
+      }
+    } finally {
+      setSaving(false)
+    }
+  }, [bridge, vendorName, baseUrl, userApiKey, models, onCommitted])
 
   const handleStart = React.useCallback(async () => {
     if (!bridge?.onboarding) {
@@ -176,6 +255,9 @@ export function OnboardingWizard({ opened, onClose, onCommitted }: {
   }, [traceJson])
 
   const canStart = docsUrl.trim().length > 0 && userApiKey.trim().length > 0 && phase === 'input'
+  const baseUrlValid = /^https?:\/\//i.test(baseUrl.trim())
+  const hasModelId = models.some(m => m.id.trim().length > 0)
+  const canSaveManual = baseUrlValid && userApiKey.trim().length > 0 && hasModelId && !saving
 
   return (
     <DesignModal
@@ -192,8 +274,114 @@ export function OnboardingWizard({ opened, onClose, onCommitted }: {
           <ProgressDots phase={phase} />
         </Group>
 
-        {phase === 'input' && (
+        {phase === 'input' && inputMode === 'manual' && (
           <Stack gap="md">
+            <Field label="供应商名称" hint="给这个接入点起个名字，方便你认（可选）">
+              <DesignTextInput
+                value={vendorName}
+                onChange={e => setVendorName(e.currentTarget.value)}
+                placeholder="如：本地 Ollama、我的中转站"
+                autoFocus
+              />
+            </Field>
+            <Field label="接入地址（BaseURL）" hint="OpenAI 兼容端点，到 /v1 为止">
+              <DesignTextInput
+                value={baseUrl}
+                onChange={e => { setBaseUrl(e.currentTarget.value); setTestState('idle') }}
+                placeholder="http://localhost:11434/v1"
+                error={baseUrl.trim().length > 0 && !baseUrlValid ? '需以 http:// 或 https:// 开头' : undefined}
+              />
+            </Field>
+            <Field label="你的 API Key" hint="只存在你的电脑上，加密保存（本地模型可随便填）">
+              <PasswordInput
+                value={userApiKey}
+                onChange={e => { setUserApiKey(e.currentTarget.value); setTestState('idle') }}
+                placeholder="sk-..."
+              />
+            </Field>
+
+            <Stack gap={4}>
+              <Text size="sm" c="var(--nomi-ink)">模型</Text>
+              <Stack gap={6}>
+                {models.map((m, i) => (
+                  <Group key={i} gap={6} wrap="nowrap" align="flex-start">
+                    <DesignTextInput
+                      value={m.id}
+                      onChange={e => updateModel(i, { id: e.currentTarget.value })}
+                      placeholder="模型 id，如 llama3.1 / gpt-4o"
+                      style={{ flex: 1.4 }}
+                    />
+                    <DesignTextInput
+                      value={m.displayName}
+                      onChange={e => updateModel(i, { displayName: e.currentTarget.value })}
+                      placeholder="显示名（可选）"
+                      style={{ flex: 1 }}
+                    />
+                    <ActionIcon
+                      variant="subtle"
+                      color="gray"
+                      onClick={() => removeModelRow(i)}
+                      disabled={models.length <= 1}
+                      aria-label="删除这一行模型"
+                    >
+                      <IconTrash size={14} />
+                    </ActionIcon>
+                  </Group>
+                ))}
+              </Stack>
+              <Group justify="flex-start">
+                <DesignButton variant="subtle" leftSection={<IconPlus size={14} />} onClick={addModelRow}>
+                  添加模型
+                </DesignButton>
+              </Group>
+            </Stack>
+
+            <Group justify="space-between" align="center">
+              <Group gap={8} align="center">
+                <DesignButton
+                  variant="subtle"
+                  onClick={handleTestConnection}
+                  disabled={!baseUrlValid || testState === 'testing'}
+                  loading={testState === 'testing'}
+                >
+                  测试连接
+                </DesignButton>
+                {testState === 'ok' && <Text size="xs" c="var(--nomi-ink-60)">✓ {testMessage}</Text>}
+                {testState === 'fail' && <Text size="xs" c="var(--nomi-ink-60)" lineClamp={1}>✗ {testMessage}</Text>}
+              </Group>
+              <DesignButton onClick={handleManualSave} disabled={!canSaveManual} loading={saving}>
+                保存
+              </DesignButton>
+            </Group>
+
+            <Anchor
+              component="button"
+              type="button"
+              onClick={() => setInputMode('docs')}
+              c="var(--nomi-ink-60)"
+              size="xs"
+              style={{ alignSelf: 'flex-start' }}
+            >
+              要加图片 / 视频模型？让 AI 读文档自动配置 →
+            </Anchor>
+          </Stack>
+        )}
+
+        {phase === 'input' && inputMode === 'docs' && (
+          <Stack gap="md">
+            <Anchor
+              component="button"
+              type="button"
+              onClick={() => setInputMode('manual')}
+              c="var(--nomi-ink-60)"
+              size="xs"
+              style={{ alignSelf: 'flex-start' }}
+            >
+              ← 返回手动填写
+            </Anchor>
+            <Text size="xs" c="var(--nomi-ink-60)">
+              适合图片 / 视频等非标准接口：AI 读官方文档，自动抠出参数并配置。需先有一个文本模型来读文档。
+            </Text>
             <Field label="文档地址" hint="粘贴这个模型的官方 API 文档页">
               <DesignTextInput
                 value={docsUrl}

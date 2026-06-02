@@ -1294,6 +1294,9 @@ export function commitOnboardedModelToCatalog(payload: {
   userApiKey: string;
   /** Optional display label override; otherwise we use draft.modelDisplayName. */
   displayLabel?: string;
+  /** How this model was added. Defaults to "agent" (the doc-reader path). The
+   *  manual BaseURL entry passes "manual" so the catalog records provenance honestly. */
+  addedVia?: "agent" | "manual";
 }): Model {
   const outcome = payload?.outcome as JsonRecord | null;
   if (!outcome || typeof outcome !== "object") throw new Error("outcome required");
@@ -1375,7 +1378,7 @@ export function commitOnboardedModelToCatalog(payload: {
     enabled: true,
     meta: { parameters: metaParameters },
     onboarding: {
-      addedVia: "agent",
+      addedVia: payload.addedVia ?? "agent",
       trialId: String(outcome.trialId || ""),
       docsUrl: String(outcome.docsUrl || ""),
       addedAt: nowIso(),
@@ -1406,6 +1409,97 @@ export function commitOnboardedModelToCatalog(payload: {
   }
 
   return model;
+}
+
+/**
+ * Derive a stable vendorKey from a BaseURL host. Same host → same vendor (so
+ * re-adding models under the same endpoint merges, per upsert semantics).
+ * localhost/127.0.0.1 include the port so Ollama(11434) and ComfyUI(8188) don't
+ * collide as one "localhost" vendor.
+ */
+export function deriveVendorKeyFromBaseUrl(baseUrl: string): string {
+  let host = "";
+  let port = "";
+  try {
+    const u = new URL(baseUrl);
+    host = u.hostname;
+    port = u.port;
+  } catch {
+    return "";
+  }
+  let seed = host;
+  if (host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0") {
+    seed = `local-${port || "80"}`;
+  }
+  return seed.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+}
+
+/**
+ * Manual provider entry — the PRIMARY model-adding path (BaseURL + key + models).
+ * Deterministic: for a standard OpenAI-compatible text endpoint the whole catalog
+ * shape is known, so no doc-reading AI is needed (that breaks the bootstrap
+ * deadlock where the doc-reader itself required a pre-existing text model).
+ *
+ * Reuses the SINGLE write path (commitOnboardedModelToCatalog) — N models = one
+ * vendor + N model upserts. Text/chat models run via the direct AI SDK path
+ * (buildAiSdkModel → createOpenAICompatible), so we deliberately emit NO HTTP
+ * mapping here: a fabricated /chat/completions mapping would be unused dead data.
+ *
+ * No connectivity test in this flow (aligns with opencode): local/custom
+ * endpoints vary in tolerance; storing-then-failing-at-call-time is honest and
+ * doesn't block legitimate models. A separate, non-blocking test exists.
+ */
+export function commitManualOpenAiCompatibleModels(payload: {
+  vendorName: string;
+  baseUrl: string;
+  apiKey: string;
+  models: Array<{ id: string; displayName?: string }>;
+}): { vendorKey: string; committed: Array<{ modelKey: string; displayName: string }> } {
+  const baseUrl = String(payload?.baseUrl || "").trim();
+  const apiKey = String(payload?.apiKey || "").trim();
+  if (!/^https?:\/\//i.test(baseUrl)) throw new Error("接入地址需以 http:// 或 https:// 开头");
+  if (!apiKey) throw new Error("API Key 不能为空");
+
+  const vendorKey = deriveVendorKeyFromBaseUrl(baseUrl);
+  if (!vendorKey) throw new Error("无法从接入地址解析出供应商标识");
+
+  const vendorName = String(payload?.vendorName || "").trim() || vendorKey;
+
+  const rawModels = Array.isArray(payload?.models) ? payload.models : [];
+  const seen = new Set<string>();
+  const cleanModels = rawModels
+    .map((m) => ({ id: String(m?.id || "").trim(), displayName: String(m?.displayName || "").trim() }))
+    .filter((m) => {
+      if (!m.id || seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    });
+  if (cleanModels.length === 0) throw new Error("至少填写一个模型 id");
+
+  const committed: Array<{ modelKey: string; displayName: string }> = [];
+  for (const m of cleanModels) {
+    const displayName = m.displayName || m.id;
+    const outcome = {
+      status: "success",
+      trialId: "",
+      docsUrl: "",
+      draft: {
+        vendorKey,
+        vendorName,
+        vendorBaseUrl: baseUrl,
+        vendorAuth: { type: "bearer" as const },
+        vendorProviderKind: "openai-compatible" as const,
+        modelKey: m.id,
+        modelDisplayName: displayName,
+        targetKind: "text" as const,
+        modelFields: [],
+      },
+    };
+    commitOnboardedModelToCatalog({ outcome, userApiKey: apiKey, addedVia: "manual" });
+    committed.push({ modelKey: m.id, displayName });
+  }
+
+  return { vendorKey, committed };
 }
 
 export function upsertModelCatalogModel(payload: unknown): Model {

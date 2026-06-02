@@ -116,6 +116,22 @@ export type DesktopBridge = {
     }) => Promise<{ trialId: string }>
     cancel: (trialId: string) => Promise<{ ok: boolean; error?: string }>
     onEvent: (trialId: string, callback: (event: unknown) => void) => () => void
+    manualCommit: (payload: {
+      vendorName: string
+      baseUrl: string
+      apiKey: string
+      models: Array<{ id: string; displayName?: string }>
+    }) => Promise<{
+      ok: boolean
+      vendorKey?: string
+      committed?: Array<{ modelKey: string; displayName: string }>
+      error?: string
+    }>
+    testConnection: (payload: { baseUrl: string; apiKey: string; modelId?: string }) => Promise<{
+      ok: boolean
+      status?: number
+      error?: string
+    }>
   }
   modelCatalog: {
     listVendors: () => unknown[]
