@@ -179,45 +179,31 @@ export default function WorkbenchShell({
                     <ProjectExplorerSidebar projectId={projectId ?? null} />
                 ) : null}
                 <div className='flex-1 min-w-0 min-h-0 relative'>
-                    <React.Suspense
-                        fallback={
-                            <div
-                                className={cn(
-                                    "workbench-shell__loading",
-                                    "w-full h-full bg-workbench-bg",
-                                )}
-                                aria-label='工作区加载中'
-                            />
-                        }>
-                        <div
-                            className={cn(
-                                "workbench-shell__workspace",
-                                "w-full h-full min-w-0 min-h-0",
-                            )}
-                            hidden={workspaceMode !== "creation"}>
+                    {mountedWorkspaceModes.includes("creation") ? (
+                        <WorkspaceSlot
+                            active={workspaceMode === "creation"}
+                            label='创作区'>
                             <CreationWorkspace />
-                        </div>
-                        <div
-                            className={cn(
-                                "workbench-shell__workspace",
-                                "w-full h-full min-w-0 min-h-0",
-                            )}
-                            hidden={workspaceMode !== "generation"}>
+                        </WorkspaceSlot>
+                    ) : null}
+                    {mountedWorkspaceModes.includes("generation") ? (
+                        <WorkspaceSlot
+                            active={workspaceMode === "generation"}
+                            label='生成区'>
                             <GenerationWorkspace
                                 canvas={generation}
                                 aiSidebar={generationAi}
                                 aiLayout={generationAiLayout}
                             />
-                        </div>
-                        <div
-                            className={cn(
-                                "workbench-shell__workspace",
-                                "w-full h-full min-w-0 min-h-0",
-                            )}
-                            hidden={workspaceMode !== "preview"}>
+                        </WorkspaceSlot>
+                    ) : null}
+                    {mountedWorkspaceModes.includes("preview") ? (
+                        <WorkspaceSlot
+                            active={workspaceMode === "preview"}
+                            label='预览区'>
                             <PreviewWorkspace />
-                        </div>
-                    </React.Suspense>
+                        </WorkspaceSlot>
+                    ) : null}
                 </div>
             </main>
         </div>

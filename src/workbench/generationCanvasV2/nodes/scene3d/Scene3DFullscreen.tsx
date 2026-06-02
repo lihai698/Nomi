@@ -163,6 +163,9 @@ const MANNEQUIN_DEFAULT_SCALE: Scene3DVector3 = [2.5, 2.5, 2.5]
 const MANNEQUIN_LABEL_BASE_HEIGHT = 0.58
 const ROLE_COLOR_SEQUENCE = ['#ef4444', '#facc15', '#3b82f6', '#22c55e'] as const
 const CROWD_MAX_AXIS = 10
+const CROWD_DETAILED_MODEL_LIMIT = 4
+const CROWD_INSTANCED_GEOMETRY_SEGMENTS = 12
+const CROWD_FOOT_RING_SEGMENTS = 48
 const FREE_LOOK_ROTATION_SPEED = 0.003
 const WHEEL_TRAVEL_SPEED = 0.0045
 const CAMERA_LENS_DEPTH_MAX_FACTOR = 0.85
@@ -1423,6 +1426,107 @@ function crowdLocalOffset(object: Scene3DObject, index: number): THREE.Vector3 {
   )
 }
 
+function crowdLocalOffsets(object: Scene3DObject): THREE.Vector3[] {
+  return Array.from({ length: crowdCount(object) }, (_, index) => crowdLocalOffset(object, index))
+}
+
+type CrowdInstancePart = {
+  key: string
+  geometry: 'sphere' | 'cylinder'
+  position: Scene3DVector3
+  rotation?: Scene3DVector3
+  scale: Scene3DVector3
+}
+
+const CROWD_INSTANCE_PARTS: CrowdInstancePart[] = [
+  { key: 'head', geometry: 'sphere', position: [0, 0.41, 0], scale: [0.09, 0.09, 0.09] },
+  { key: 'torso', geometry: 'cylinder', position: [0, 0.12, 0], scale: [0.13, 0.4, 0.13] },
+  { key: 'left-arm', geometry: 'cylinder', position: [-0.24, 0.2, 0], rotation: [0, 0, Math.PI / 2], scale: [0.036, 0.36, 0.036] },
+  { key: 'right-arm', geometry: 'cylinder', position: [0.24, 0.2, 0], rotation: [0, 0, Math.PI / 2], scale: [0.036, 0.36, 0.036] },
+  { key: 'left-leg', geometry: 'cylinder', position: [-0.075, -0.28, 0], scale: [0.041, 0.46, 0.041] },
+  { key: 'right-leg', geometry: 'cylinder', position: [0.075, -0.28, 0], scale: [0.041, 0.46, 0.041] },
+]
+
+function InstancedMeshBatch({
+  part,
+  offsets,
+  roleStartIndex,
+}: {
+  part: CrowdInstancePart
+  offsets: THREE.Vector3[]
+  roleStartIndex: number
+}): JSX.Element {
+  const meshRef = React.useRef<THREE.InstancedMesh>(null)
+  const count = offsets.length
+  const matrix = React.useMemo(() => new THREE.Matrix4(), [])
+  const position = React.useMemo(() => new THREE.Vector3(), [])
+  const rotation = React.useMemo(() => new THREE.Quaternion(), [])
+  const scale = React.useMemo(() => new THREE.Vector3(), [])
+  const color = React.useMemo(() => new THREE.Color(), [])
+
+  React.useLayoutEffect(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    mesh.count = count
+    offsets.forEach((offset, index) => {
+      position.set(
+        offset.x + part.position[0],
+        offset.y + part.position[1],
+        offset.z + part.position[2],
+      )
+      rotation.setFromEuler(new THREE.Euler(
+        part.rotation?.[0] || 0,
+        part.rotation?.[1] || 0,
+        part.rotation?.[2] || 0,
+      ))
+      scale.fromArray(part.scale)
+      matrix.compose(position, rotation, scale)
+      mesh.setMatrixAt(index, matrix)
+      mesh.setColorAt(index, color.set(roleColorForIndex(roleStartIndex + index)))
+    })
+    mesh.instanceMatrix.needsUpdate = true
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true
+    mesh.computeBoundingSphere()
+  }, [color, count, matrix, offsets, part, position, roleStartIndex, rotation, scale])
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, Math.max(1, count)]} frustumCulled={false}>
+      {part.geometry === 'sphere'
+        ? <sphereGeometry args={[1, CROWD_INSTANCED_GEOMETRY_SEGMENTS, CROWD_INSTANCED_GEOMETRY_SEGMENTS]} />
+        : <cylinderGeometry args={[1, 1, 1, CROWD_INSTANCED_GEOMETRY_SEGMENTS]} />}
+      <meshStandardMaterial roughness={0.62} />
+    </instancedMesh>
+  )
+}
+
+function InstancedProceduralMannequinCrowd({
+  object,
+  roleStartIndex,
+}: {
+  object: Scene3DObject
+  roleStartIndex: number
+}): JSX.Element {
+  const offsets = React.useMemo(() => crowdLocalOffsets(object), [
+    object.crowdRows,
+    object.crowdColumns,
+    object.crowdSpacing,
+    object.scale,
+  ])
+
+  return (
+    <>
+      {CROWD_INSTANCE_PARTS.map((part) => (
+        <InstancedMeshBatch
+          key={part.key}
+          part={part}
+          offsets={offsets}
+          roleStartIndex={roleStartIndex}
+        />
+      ))}
+    </>
+  )
+}
+
 function MannequinCrowd({
   object,
   roleStartIndex,
@@ -1430,10 +1534,21 @@ function MannequinCrowd({
   object: Scene3DObject
   roleStartIndex: number
 }): JSX.Element {
+  const offsets = React.useMemo(() => crowdLocalOffsets(object), [
+    object.crowdRows,
+    object.crowdColumns,
+    object.crowdSpacing,
+    object.scale,
+  ])
+
+  if (offsets.length > CROWD_DETAILED_MODEL_LIMIT) {
+    return <InstancedProceduralMannequinCrowd object={object} roleStartIndex={roleStartIndex} />
+  }
+
   return (
     <>
-      {Array.from({ length: crowdCount(object) }, (_, index) => (
-        <group key={`${object.id}-member-${index}`} position={vectorToArray(crowdLocalOffset(object, index))}>
+      {offsets.map((offset, index) => (
+        <group key={`${object.id}-member-${index}`} position={vectorToArray(offset)}>
           <Mannequin color={roleColorForIndex(roleStartIndex + index)} pose={object.pose} />
         </group>
       ))}
@@ -1448,15 +1563,7 @@ function ProceduralMannequinCrowd({
   object: Scene3DObject
   roleStartIndex: number
 }): JSX.Element {
-  return (
-    <>
-      {Array.from({ length: crowdCount(object) }, (_, index) => (
-        <group key={`${object.id}-fallback-member-${index}`} position={vectorToArray(crowdLocalOffset(object, index))}>
-          <ProceduralMannequin color={roleColorForIndex(roleStartIndex + index)} />
-        </group>
-      ))}
-    </>
-  )
+  return <InstancedProceduralMannequinCrowd object={object} roleStartIndex={roleStartIndex} />
 }
 
 function LightObject({ object }: { object: Scene3DObject }): JSX.Element {
@@ -1679,34 +1786,83 @@ function FootRing({
   )
 }
 
+function InstancedFootRings({
+  positions,
+  radius,
+}: {
+  positions: Scene3DVector3[]
+  radius: number
+}): JSX.Element {
+  const meshRef = React.useRef<THREE.InstancedMesh>(null)
+  const count = positions.length
+  const matrix = React.useMemo(() => new THREE.Matrix4(), [])
+  const position = React.useMemo(() => new THREE.Vector3(), [])
+  const rotation = React.useMemo(() => new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2, 0, 0)), [])
+  const scale = React.useMemo(() => new THREE.Vector3(1, 1, 1), [])
+
+  React.useLayoutEffect(() => {
+    const mesh = meshRef.current
+    if (!mesh) return
+    mesh.count = count
+    positions.forEach((entry, index) => {
+      position.set(entry[0], OBJECT_GROUND_GUIDE_ELEVATION, entry[2])
+      matrix.compose(position, rotation, scale)
+      mesh.setMatrixAt(index, matrix)
+    })
+    mesh.instanceMatrix.needsUpdate = true
+    mesh.computeBoundingSphere()
+  }, [count, matrix, position, positions, rotation, scale])
+
+  return (
+    <instancedMesh
+      ref={meshRef}
+      args={[undefined, undefined, Math.max(1, count)]}
+      raycast={() => null}
+      renderOrder={3}
+      userData={{ [CAMERA_HELPER_FLAG]: true }}
+    >
+      <ringGeometry args={[radius * 0.92, radius, CROWD_FOOT_RING_SEGMENTS]} />
+      <meshBasicMaterial
+        color={MANNEQUIN_FOOT_RING_COLOR}
+        depthWrite={false}
+        opacity={0.8}
+        side={THREE.DoubleSide}
+        transparent
+        toneMapped={false}
+      />
+    </instancedMesh>
+  )
+}
+
 function MannequinFootRings({ object }: { object: Scene3DObject }): JSX.Element | null {
-  if (object.type !== 'mannequin' && object.type !== 'mannequinCrowd') return null
   const baseRadius = mannequinFootRingRadius(object)
+  const positions = React.useMemo(() => {
+    if (object.type !== 'mannequinCrowd') return []
+    const matrix = new THREE.Matrix4()
+    matrix.compose(
+      vectorFromArray(object.position),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(object.rotation[0], object.rotation[1], object.rotation[2])),
+      vectorFromArray(object.scale),
+    )
+    return Array.from({ length: crowdCount(object) }, (_, index) => (
+      vectorToArray(crowdLocalOffset(object, index).applyMatrix4(matrix))
+    ))
+  }, [
+    object.crowdRows,
+    object.crowdColumns,
+    object.crowdSpacing,
+    object.position,
+    object.rotation,
+    object.scale,
+  ])
+
+  if (object.type !== 'mannequin' && object.type !== 'mannequinCrowd') return null
 
   if (object.type === 'mannequin') {
     return <FootRing position={[object.position[0], 0, object.position[2]]} radius={baseRadius} />
   }
 
-  const matrix = new THREE.Matrix4()
-  matrix.compose(
-    vectorFromArray(object.position),
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(object.rotation[0], object.rotation[1], object.rotation[2])),
-    vectorFromArray(object.scale),
-  )
-  return (
-    <>
-      {Array.from({ length: crowdCount(object) }, (_, index) => {
-        const position = crowdLocalOffset(object, index).applyMatrix4(matrix)
-        return (
-          <FootRing
-            key={`${object.id}-foot-ring-${index}`}
-            position={vectorToArray(position)}
-            radius={baseRadius}
-          />
-        )
-      })}
-    </>
-  )
+  return <InstancedFootRings positions={positions} radius={baseRadius} />
 }
 
 function CameraFrustumLines({
@@ -3559,11 +3715,7 @@ function PreviewObjectView({
           </React.Suspense>
         </MannequinAssetBoundary>
       ) : object.type === 'mannequinCrowd' ? (
-        <MannequinAssetBoundary fallback={<ProceduralMannequinCrowd object={object} roleStartIndex={roleStartIndex} />}>
-          <React.Suspense fallback={<ProceduralMannequinCrowd object={object} roleStartIndex={roleStartIndex} />}>
-            <MannequinCrowd object={object} roleStartIndex={roleStartIndex} />
-          </React.Suspense>
-        </MannequinAssetBoundary>
+        <ProceduralMannequinCrowd object={object} roleStartIndex={roleStartIndex} />
       ) : object.type === 'light' ? (
         <LightObject object={object} />
       ) : (
@@ -3685,6 +3837,7 @@ function CameraPreview({
               rotation: camera.rotation,
             }}
             dpr={[1, 1.5]}
+            frameloop="demand"
             gl={{ antialias: true, preserveDrawingBuffer: false }}
           >
             <CameraPreviewScene state={state} cameraData={camera} />

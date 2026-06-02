@@ -1,9 +1,7 @@
 import React from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import WorkbenchShell from "./WorkbenchShell";
 import ProjectLibraryPage from "./library/ProjectLibraryPage";
 import { ToastHost } from "../ui/toast";
-import { OnboardingFloatingPanel } from "../ui/onboarding/OnboardingFloatingPanel";
 import {
     createLocalProject,
     deleteLocalProject,
@@ -14,13 +12,7 @@ import {
     buildStoryDocument,
     type TryNowExample,
 } from "./library/tryNowExamples";
-import { useWorkbenchStore } from "./workbenchStore";
-import { requestStoryboardPlanning } from "./generationCanvasV2/agent/storyboardLauncher";
-import {
-    consumeCategoryMigrationDiagnostic,
-    createWorkbenchProjectPersistenceService,
-} from "./project/projectPersistenceService";
-import { readCurrentWorkbenchProjectPayload } from "./project/workbenchProjectSession";
+import type { WorkbenchProjectPersistenceService } from "./project/projectPersistenceService";
 import { useWorkspaceEvents } from "./useWorkspaceEvents";
 import { cn } from "../utils/cn";
 import { toast } from "../ui/toast";
@@ -31,10 +23,16 @@ import {
     openWorkspaceFromLibrary,
     openWorkspaceProjectFromPicker,
 } from "./library/openWorkspaceFlow";
-import { DesignDrawer } from "src/design";
 
 type AppView = "library" | "studio";
+type ProjectPersistenceModule = typeof import("./project/projectPersistenceService");
 
+const WorkbenchShell = React.lazy(() => import("./WorkbenchShell"));
+const OnboardingFloatingPanel = React.lazy(() =>
+    import("../ui/onboarding/OnboardingFloatingPanel").then((module) => ({
+        default: module.OnboardingFloatingPanel,
+    })),
+);
 const GenerationCanvas = React.lazy(
     () => import("./generationCanvasV2/components/GenerationCanvas"),
 );
@@ -73,9 +71,10 @@ export default function NomiStudioApp(): JSX.Element {
     const hydratingProjectRef = React.useRef(false);
     const activeProjectIdRef = React.useRef<string | null>(null);
     const initialHydrationAttemptedRef = React.useRef(false);
-    const projectPersistenceServiceRef = React.useRef<ReturnType<
-        typeof createWorkbenchProjectPersistenceService
-    > | null>(null);
+    const projectPersistenceModuleRef =
+        React.useRef<ProjectPersistenceModule | null>(null);
+    const projectPersistenceServiceRef =
+        React.useRef<WorkbenchProjectPersistenceService | null>(null);
     const routeProjectId = React.useMemo(
         () => readProjectIdFromSearch(location.search),
         [location.search],
@@ -105,9 +104,15 @@ export default function NomiStudioApp(): JSX.Element {
             );
     }, []);
 
-    if (projectPersistenceServiceRef.current === null) {
-        projectPersistenceServiceRef.current =
-            createWorkbenchProjectPersistenceService({
+    const ensureProjectPersistenceService = React.useCallback(async () => {
+        let module = projectPersistenceModuleRef.current;
+        if (!module) {
+            module = await import("./project/projectPersistenceService");
+            projectPersistenceModuleRef.current = module;
+        }
+        let service = projectPersistenceServiceRef.current;
+        if (!service) {
+            service = module.createWorkbenchProjectPersistenceService({
                 setActiveProject,
                 setView,
                 onSaveError: (error) => {
@@ -115,7 +120,10 @@ export default function NomiStudioApp(): JSX.Element {
                     toast("项目保存失败，请检查本地磁盘权限", "error");
                 },
             });
-    }
+            projectPersistenceServiceRef.current = service;
+        }
+        return { module, service };
+    }, []);
 
     React.useEffect(() => {
         setDesktopActiveProjectId(activeProject?.id);
@@ -123,8 +131,7 @@ export default function NomiStudioApp(): JSX.Element {
 
     const hydrateProject = React.useCallback(
         async (projectId: string, options: { replaceUrl?: boolean } = {}) => {
-            const service = projectPersistenceServiceRef.current;
-            if (!service) return false;
+            const { module, service } = await ensureProjectPersistenceService();
             hydratingProjectRef.current = true;
             try {
                 const hydrated = await service.hydrateProject(projectId);
@@ -132,7 +139,8 @@ export default function NomiStudioApp(): JSX.Element {
                 activeProjectIdRef.current = hydrated.id;
                 setActiveProject(hydrated);
                 setView("studio");
-                const migrationDiag = consumeCategoryMigrationDiagnostic();
+                const migrationDiag =
+                    module.consumeCategoryMigrationDiagnostic();
                 if (
                     migrationDiag &&
                     (migrationDiag.migratedNodes > 0 ||
@@ -151,7 +159,7 @@ export default function NomiStudioApp(): JSX.Element {
             }
             return true;
         },
-        [navigate],
+        [ensureProjectPersistenceService, navigate],
     );
 
     const openProject = React.useCallback(
@@ -216,15 +224,20 @@ export default function NomiStudioApp(): JSX.Element {
             const hydrated = await hydrateProject(projectId);
             if (!hydrated) return;
             const doc = buildStoryDocument(example.story, example.projectName);
+            const { useWorkbenchStore } = await import("./workbenchStore");
             const store = useWorkbenchStore.getState();
             store.setWorkbenchDocument(doc);
             store.setWorkspaceMode("creation");
             // Allow the creation editor + canvas assistant panel to mount before
             // dispatching, so the storyboard listener actually picks up the event.
             window.setTimeout(() => {
-                requestStoryboardPlanning({
-                    storyText: example.story,
-                    source: `library-try-now:${example.id}`,
+                void import(
+                    "./generationCanvasV2/agent/storyboardLauncher"
+                ).then(({ requestStoryboardPlanning }) => {
+                    requestStoryboardPlanning({
+                        storyText: example.story,
+                        source: `library-try-now:${example.id}`,
+                    });
                 });
             }, 200);
         },
@@ -261,12 +274,13 @@ export default function NomiStudioApp(): JSX.Element {
     React.useEffect(() => {
         if (initialHydrationAttemptedRef.current) return;
         initialHydrationAttemptedRef.current = true;
-        const service = projectPersistenceServiceRef.current;
-        if (!service) return;
+        if (!routeProjectId) return;
+        let cancelled = false;
         hydratingProjectRef.current = true;
-        void service
-            .hydrateInitialProject(projects)
+        void ensureProjectPersistenceService()
+            .then(({ service }) => service.hydrateInitialProject(projects))
             .then((hydrated) => {
+                if (cancelled) return;
                 if (hydrated) {
                     activeProjectIdRef.current = hydrated.id;
                     setActiveProject(hydrated);
@@ -285,9 +299,18 @@ export default function NomiStudioApp(): JSX.Element {
                 console.error(message);
             })
             .finally(() => {
-                hydratingProjectRef.current = false;
+                if (!cancelled) hydratingProjectRef.current = false;
             });
-    }, [navigate, projects, routeProjectId]);
+        return () => {
+            cancelled = true;
+            hydratingProjectRef.current = false;
+        };
+    }, [
+        ensureProjectPersistenceService,
+        navigate,
+        projects,
+        routeProjectId,
+    ]);
 
     React.useEffect(() => {
         if (
@@ -304,21 +327,33 @@ export default function NomiStudioApp(): JSX.Element {
 
     React.useEffect(() => {
         if (!activeProject?.id) return;
-        const service = projectPersistenceServiceRef.current;
-        if (!service) return undefined;
-        return service.bindProjectPersistence({
-            project: activeProject,
-            isHydrating: () => hydratingProjectRef.current,
-            canPersist: () => activeProjectIdRef.current === activeProject.id,
-            onSaved: (saved) => {
-                setActiveProject(saved);
-            },
-            onSaveError: (error) => {
-                console.error("project save error", error);
-                toast("项目保存失败，请检查本地磁盘权限", "error");
-            },
+        let disposed = false;
+        let unbind: (() => void) | undefined;
+        void ensureProjectPersistenceService().then(({ service }) => {
+            if (disposed) return;
+            unbind = service.bindProjectPersistence({
+                project: activeProject,
+                isHydrating: () => hydratingProjectRef.current,
+                canPersist: () =>
+                    activeProjectIdRef.current === activeProject.id,
+                onSaved: (saved) => {
+                    setActiveProject(saved);
+                },
+                onSaveError: (error) => {
+                    console.error("project save error", error);
+                    toast("项目保存失败，请检查本地磁盘权限", "error");
+                },
+            });
         });
-    }, [activeProjectPersistenceKey]);
+        return () => {
+            disposed = true;
+            unbind?.();
+        };
+    }, [
+        activeProject,
+        activeProjectPersistenceKey,
+        ensureProjectPersistenceService,
+    ]);
 
     useWorkspaceEvents(view === "studio" ? activeProject?.id : null, (type) => {
         if (
@@ -350,20 +385,21 @@ export default function NomiStudioApp(): JSX.Element {
             // state (NOT a re-read from disk — that would be stale). This updates the
             // project file on disk AND publishes the new summary so the project library
             // card refreshes via SWR.
-            const service = projectPersistenceServiceRef.current;
-            if (service) {
-                void service
-                    .persistProject(
+            void ensureProjectPersistenceService()
+                .then(async ({ service }) => {
+                    const { readCurrentWorkbenchProjectPayload } =
+                        await import("./project/workbenchProjectSession");
+                    return service.persistProject(
                         renamed,
                         readCurrentWorkbenchProjectPayload(),
-                    )
-                    .catch((error: unknown) => {
-                        console.error("project rename save error", error);
-                        toast("项目重命名保存失败", "error");
-                    });
-            }
+                    );
+                })
+                .catch((error: unknown) => {
+                    console.error("project rename save error", error);
+                    toast("项目重命名保存失败", "error");
+                });
         },
-        [activeProject],
+        [activeProject, ensureProjectPersistenceService],
     );
 
     if (view === "library") {
