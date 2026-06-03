@@ -174,10 +174,24 @@ function siblingFfprobePath(ffmpegPath: string): string {
   return path.join(path.dirname(executablePathForRuntime(ffmpegPath)), executableName);
 }
 
+function bundledFfprobePath(): string {
+  // 打包随附的 ffprobe（@ffprobe-installer），让"双击即用"用户无需自装 ffprobe 即可探测音轨
+  try {
+    const installer = require("@ffprobe-installer/ffprobe") as { path?: string };
+    const installerPath = typeof installer?.path === "string" ? executablePathForRuntime(installer.path) : "";
+    return installerPath && commandExists(installerPath) ? installerPath : "";
+  } catch {
+    return "";
+  }
+}
+
 function resolveFfprobePath(explicitFfprobePath?: string, explicitFfmpegPath?: string): string {
   if (typeof explicitFfprobePath === "string" && explicitFfprobePath.trim()) return explicitFfprobePath.trim();
   const envProbePath = String(process.env.NOMI_FFPROBE_PATH || "").trim();
   if (envProbePath) return envProbePath;
+
+  const bundled = bundledFfprobePath();
+  if (bundled) return bundled;
 
   const ffmpegPath = resolveFfmpegPath(explicitFfmpegPath);
   const sibling = siblingFfprobePath(ffmpegPath);
