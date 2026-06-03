@@ -136,6 +136,15 @@ export default function CanvasToolbar({ getInsertionPosition, categoryId }: Canv
         <NodePluginIcon kind="panorama" size={15} />
         <span className="hidden">全景图</span>
       </WorkbenchButton>
+      <WorkbenchButton
+        className={cn('w-8 h-8 min-h-8 p-0 border-0 rounded-nomi-sm cursor-pointer')}
+        aria-label="添加 3D 场景节点"
+        title="3D 场景"
+        onClick={() => handleAddNode('scene3d')}
+      >
+        <NodePluginIcon kind="scene3d" size={15} />
+        <span className="hidden">3D 场景</span>
+      </WorkbenchButton>
       <span className={cn('w-5 h-px bg-workbench-border')} />
       <WorkbenchButton
         className={cn('w-8 h-8 min-h-8 p-0 border-0 rounded-nomi-sm cursor-pointer disabled:cursor-not-allowed disabled:opacity-[0.42]')}
