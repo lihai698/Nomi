@@ -657,7 +657,6 @@ export default function NodeParameterControls({
   // C5：文本节点也是可生成节点（executionKind:'text'）——要渲染模型选择器，否则没处选模型。
   const isTextLike = getGenerationNodeExecutionKind(node.kind) === 'text'
   const isGenerationNode = isImageLike || isVideoLike || isTextLike
-  if (!isGenerationNode) return null
 
   const selectedModelValue = readMeta(meta, 'modelKey') || readMeta(meta, 'modelAlias') || readMeta(meta, 'imageModel') || readMeta(meta, 'videoModel')
   const selectedModelOption = findModelOptionByIdentifier(modelOptions, selectedModelValue) || null
@@ -740,6 +739,7 @@ export default function NodeParameterControls({
       },
     })
   }, [isGenerationNode, isVideoLike, meta, node.id, node.meta, selectedModelOption, updateNode])
+  if (!isGenerationNode) return null
   const handleParameterControlChange = (control: ModelParameterControl, value: string) => {
     updateMeta({ [control.key]: parseControlInput(control, value) })
   }
