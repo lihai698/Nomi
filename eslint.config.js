@@ -21,6 +21,7 @@ export default tseslint.config(
       'marketing/**',
       'coverage/**',
       'scripts/**',
+      'tests/ux/**',
       '**/*.config.{js,ts,mjs,cjs}',
     ],
   },
