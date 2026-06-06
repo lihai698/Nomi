@@ -41,8 +41,10 @@ const CURATED_MODELS: { modelKey: string; labelZh: string; kind: Model["kind"]; 
   { modelKey: SEEDANCE_2_MODEL_SEED.modelKey, labelZh: SEEDANCE_2_MODEL_SEED.labelZh, kind: SEEDANCE_2_MODEL_SEED.kind, archetypeId: "seedance-2" },
   { modelKey: SEEDANCE_2_FAST_MODEL_SEED.modelKey, labelZh: SEEDANCE_2_FAST_MODEL_SEED.labelZh, kind: SEEDANCE_2_FAST_MODEL_SEED.kind, archetypeId: "seedance-2-fast" },
   { modelKey: HAPPYHORSE_MODEL_SEED.modelKey, labelZh: HAPPYHORSE_MODEL_SEED.labelZh, kind: HAPPYHORSE_MODEL_SEED.kind, archetypeId: "happyhorse" },
-  { modelKey: GPT_IMAGE_2_T2I_MODEL_SEED.modelKey, labelZh: GPT_IMAGE_2_T2I_MODEL_SEED.labelZh, kind: GPT_IMAGE_2_T2I_MODEL_SEED.kind },
-  { modelKey: GPT_IMAGE_2_I2I_MODEL_SEED.modelKey, labelZh: GPT_IMAGE_2_I2I_MODEL_SEED.labelZh, kind: GPT_IMAGE_2_I2I_MODEL_SEED.kind },
+  // GPT Image 2：两个端点 model 都套同一份「GPT Image 2」档案（2 模式：文生图/图生图）。
+  // archetypeId 经 model 对账自动写到老装机的这两条记录上（无需迁移）。
+  { modelKey: GPT_IMAGE_2_T2I_MODEL_SEED.modelKey, labelZh: GPT_IMAGE_2_T2I_MODEL_SEED.labelZh, kind: GPT_IMAGE_2_T2I_MODEL_SEED.kind, archetypeId: "gpt-image-2" },
+  { modelKey: GPT_IMAGE_2_I2I_MODEL_SEED.modelKey, labelZh: GPT_IMAGE_2_I2I_MODEL_SEED.labelZh, kind: GPT_IMAGE_2_I2I_MODEL_SEED.kind, archetypeId: "gpt-image-2" },
 ];
 
 export function applyBuiltinSeeds(

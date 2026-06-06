@@ -124,6 +124,28 @@ describe('normalizeCatalogTaskResult — image path unaffected', () => {
   })
 })
 
+describe('GPT Image 2 档案（图像，2 模式打不同 taskKind 桶 + input_urls）', () => {
+  const gptNode = (modeId: string, extra: Record<string, unknown> = {}): GenerationCanvasNode => ({
+    id: 'g1', kind: 'image', title: '', position: { x: 0, y: 0 }, prompt: '画只猫',
+    meta: { modelKey: 'gpt-image-2-image-to-image', modelVendor: 'kie', vendor: 'kie', archetype: { id: 'gpt-image-2', modeId }, ...extra },
+  })
+  it('文生图模式：taskKind=text_to_image，model=t2i enum，无 input_urls', () => {
+    const built = buildCatalogTaskRequest(gptNode('t2i'))
+    expect(built.request.kind).toBe('text_to_image')
+    const ai = built.request.extras?.archetypeInput as Record<string, unknown>
+    expect(ai.model).toBe('gpt-image-2-text-to-image')
+    expect(ai).not.toHaveProperty('input_urls')
+  })
+  it('图生图模式：taskKind=image_edit，model=i2i enum，输入图进 input_urls（不是 reference_image_urls）', () => {
+    const built = buildCatalogTaskRequest(gptNode('i2i', { referenceImageUrls: ['https://x/a.png', 'https://x/b.png'] }))
+    expect(built.request.kind).toBe('image_edit')
+    const ai = built.request.extras?.archetypeInput as Record<string, unknown>
+    expect(ai.model).toBe('gpt-image-2-image-to-image')
+    expect(ai.input_urls).toEqual(['https://x/a.png', 'https://x/b.png'])
+    expect(ai).not.toHaveProperty('reference_image_urls')
+  })
+})
+
 // ───────── 「接入即验证」零额度结构闸门 ─────────
 // 遍历**每个内置档案 × 每个模式**：把该模式声明的参考槽都填上 → 构建请求 → 断言每个填进去的参考值
 // 都真的到达了请求（extras.archetypeInput）。这正是 omni 参考图丢失那类 bug 的结构防线：以后任何模型/
@@ -151,7 +173,8 @@ describe('接入即验证（零额度）：每个档案/模式声明的参考槽
           archetype: { id: archetype.id, modeId: mode.id },
         }
         for (const s of refSlots) meta[SLOT_FILL[s.kind].key] = SLOT_FILL[s.kind].value
-        const node: GenerationCanvasNode = { id: 'g1', kind: 'video', title: '', position: { x: 0, y: 0 }, prompt: 'p', meta }
+        const nodeKind = archetype.kind === 'image' ? 'image' : 'video'
+        const node: GenerationCanvasNode = { id: 'g1', kind: nodeKind, title: '', position: { x: 0, y: 0 }, prompt: 'p', meta }
         const ai = buildCatalogTaskRequest(node).request.extras?.archetypeInput as Record<string, unknown>
         expect(ai, '档案模型必须产出 archetypeInput').toBeTruthy()
         const present = new Set(flattenValues(ai))

@@ -22,9 +22,9 @@ describe("GPT Image 2 · 传输契约（锁死，防漂移）", () => {
     expect(GPT_IMAGE_2_T2I_CREATE_OP.path).toBe("/api/v1/jobs/createTask");
   });
 
-  it("图生图 body：带 input_urls（取通用 reference_images 数组），仍无视频参数", () => {
+  it("图生图 body：input_urls 取档案图生图模式的输入图数组（slot inputKey=input_urls），仍无视频参数", () => {
     const input = (GPT_IMAGE_2_I2I_CREATE_OP.body as { input: Record<string, unknown> }).input;
-    expect(input.input_urls).toBe("{{request.params.reference_images}}");
+    expect(input.input_urls).toBe("{{request.params.input_urls}}");
     expect(input.prompt).toBe("{{request.prompt}}");
     expect("duration" in input).toBe(false);
   });
@@ -67,7 +67,7 @@ describe("applyBuiltinSeeds · GPT Image 2", () => {
     const i2i = state.mappings.find((mp) => mp.vendorKey === "kie" && mp.taskKind === "image_edit");
     expect(t2i).toBeTruthy();
     expect(i2i).toBeTruthy();
-    expect((i2i?.create.body as { input: Record<string, unknown> }).input.input_urls).toBe("{{request.params.reference_images}}");
+    expect((i2i?.create.body as { input: Record<string, unknown> }).input.input_urls).toBe("{{request.params.input_urls}}");
   });
 
   it("repair：已存在的视频形状坏 (kie,text_to_image) 被替换成正确契约", () => {

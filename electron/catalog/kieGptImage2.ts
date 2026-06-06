@@ -58,7 +58,8 @@ export const GPT_IMAGE_2_T2I_CREATE_OP: HttpOperation = {
     "Content-Type": "application/json",
   },
   body: {
-    model: "{{model.modelKey}}",
+    // per-mode enum（档案当前模式 modelEnum，经 request.params.model）——伞档案 gpt-image-2 靠它分流到真端点。
+    model: "{{request.params.model}}",
     input: {
       prompt: "{{request.prompt}}",
       aspect_ratio: "{{request.params.aspect_ratio}}",
@@ -66,7 +67,7 @@ export const GPT_IMAGE_2_T2I_CREATE_OP: HttpOperation = {
   },
 };
 
-/** 图生图 createTask：多一个 input_urls（取通用 reference_images 数组，整串一个 {{}} → 数组原样透传）。 */
+/** 图生图 createTask：input_urls 取档案图生图模式的输入图数组（slot inputKey=input_urls → archetypeInput.input_urls）。 */
 export const GPT_IMAGE_2_I2I_CREATE_OP: HttpOperation = {
   method: "POST",
   path: "/api/v1/jobs/createTask",
@@ -75,10 +76,10 @@ export const GPT_IMAGE_2_I2I_CREATE_OP: HttpOperation = {
     "Content-Type": "application/json",
   },
   body: {
-    model: "{{model.modelKey}}",
+    model: "{{request.params.model}}",
     input: {
       prompt: "{{request.prompt}}",
-      input_urls: "{{request.params.reference_images}}",
+      input_urls: "{{request.params.input_urls}}",
       aspect_ratio: "{{request.params.aspect_ratio}}",
     },
   },
