@@ -66,6 +66,29 @@ export function createLinkedAbortController(external?: AbortSignal): AbortContro
   return controller;
 }
 
+/**
+ * Prompt parts for streamText, with provider-conditional prompt caching (P4):
+ * on Anthropic-family models the large, stable system+skill prompt is marked
+ * `ephemeral` so repeated turns within the ~5-min cache TTL reuse it (big cost +
+ * latency win). On every other provider the result is byte-identical to passing
+ * `{ system, messages }` — caching is opt-in per provider, never forced.
+ */
+export function buildAgentPromptParts(
+  system: string | undefined,
+  messages: CoreMessage[],
+  isAnthropic: boolean,
+): { system?: string; messages: CoreMessage[] } {
+  if (system && isAnthropic) {
+    return {
+      messages: [
+        { role: "system", content: system, providerOptions: { anthropic: { cacheControl: { type: "ephemeral" } } } },
+        ...messages,
+      ],
+    };
+  }
+  return { ...(system ? { system } : {}), messages };
+}
+
 // Explicit retry/backoff for the chat path. The AI SDK default is 2; we make it
 // explicit + a touch higher so a transient 429/5xx on flaky relays doesn't kill
 // the turn. (Applies to establishing each step's request, not mid-stream.)

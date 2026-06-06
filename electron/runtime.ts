@@ -6,7 +6,7 @@ import { hardenedFetch, hardenedFetchText } from "./hardenedFetch";
 import { localizeAssetsForVendor, resolveAssetIngestion } from "./catalog/assetLocalization";
 import { absolutePathFromLocalAssetUrl, readNomiLocalAsset, postJsonForAssetUpload } from "./assets/localAssetFile";
 import { streamText, tool, type CoreMessage, type LanguageModelV1 } from "ai";
-import { agentStreamTuning, capAgentHistory, createLinkedAbortController } from "./ai/agentChatHarness";
+import { agentStreamTuning, buildAgentPromptParts, capAgentHistory, createLinkedAbortController } from "./ai/agentChatHarness";
 import { z } from "zod";
 import { buildAiSdkModel } from "./ai/buildAiSdkModel";
 import { consumeAgentStreamWithTimeout } from "./ai/agentStreamConsumer";
@@ -2495,8 +2495,7 @@ export async function runAgentChatV2(
   const abortController = createLinkedAbortController(hooks.abortSignal);
   const result = streamText({
     model: languageModel,
-    ...(system ? { system } : {}),
-    messages,
+    ...buildAgentPromptParts(system, messages, normalizeProviderKind(vendor.providerKind) === "anthropic"),
     temperature: typeof payload.temperature === "number" ? payload.temperature : 0.7,
     tools,
     abortSignal: abortController.signal,
