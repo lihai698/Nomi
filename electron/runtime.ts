@@ -6,6 +6,7 @@ import { hardenedFetch, hardenedFetchText } from "./hardenedFetch";
 import { localizeAssetsForVendor, resolveAssetIngestion } from "./catalog/assetLocalization";
 import { absolutePathFromLocalAssetUrl, readNomiLocalAsset, postJsonForAssetUpload } from "./assets/localAssetFile";
 import { streamText, tool, type CoreMessage, type LanguageModelV1 } from "ai";
+import { capAgentHistory, createToolCallRepair, maxStepsForSkill } from "./ai/agentChatHarness";
 import { z } from "zod";
 import { buildAiSdkModel } from "./ai/buildAiSdkModel";
 import { consumeAgentStreamWithTimeout } from "./ai/agentStreamConsumer";
@@ -2446,8 +2447,8 @@ export type RunAgentChatV2Payload = {
 };
 
 // In-memory conversation history, keyed by sessionKey. Lives only for the app
-// session (cleared on quit). Capped per key so prompts can't grow unbounded.
-const AGENT_HISTORY_MAX_MESSAGES = 30;
+// session (cleared on quit). Capped per key (capAgentHistory) so prompts can't
+// grow unbounded. History/maxSteps/repair helpers live in ./ai/agentChatHarness.
 const agentChatV2History = new Map<string, CoreMessage[]>();
 
 /** Drop stored history for a session (or all sessions when no key given). */
@@ -2457,23 +2458,6 @@ export function clearAgentChatV2History(sessionKey?: string): void {
   } else {
     agentChatV2History.clear();
   }
-}
-
-/**
- * Cap stored history to the most recent N messages. Slicing can decapitate a
- * tool-call/tool-result pair, so after trimming we also drop any leading
- * `tool` messages (orphaned results the provider would reject) — and the
- * assistant tool-call message they belonged to, advancing to the next clean
- * `user` boundary if needed.
- */
-function capAgentHistory(messages: CoreMessage[]): CoreMessage[] {
-  let trimmed = messages.length > AGENT_HISTORY_MAX_MESSAGES
-    ? messages.slice(messages.length - AGENT_HISTORY_MAX_MESSAGES)
-    : messages;
-  while (trimmed.length > 0 && trimmed[0].role === "tool") {
-    trimmed = trimmed.slice(1);
-  }
-  return trimmed;
 }
 
 export async function runAgentChatV2(
@@ -2515,9 +2499,11 @@ export async function runAgentChatV2(
     messages,
     temperature: typeof payload.temperature === "number" ? payload.temperature : 0.7,
     tools,
-    maxSteps: 5,
+    maxSteps: maxStepsForSkill(resolvedSkillKey),
     toolCallStreaming: true,
     abortSignal: abortController.signal,
+    // Self-repair malformed tool-call JSON instead of crashing the turn (see harness module).
+    experimental_repairToolCall: createToolCallRepair(languageModel),
     onError: ({ error }) => hooks.emit({ type: "error", message: error instanceof Error ? error.message : String(error) }),
   });
 
