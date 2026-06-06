@@ -44,10 +44,15 @@ CI 五门(filesize/lint≤98/typecheck/vitest/build)全绿 + Rule 11 自 commit/
 - [ ] **P0.2** AssetTile(56px,图/视频缩略+播放三角/音频波形,编号/删除,token + Tabler)
 - [ ] **P0.3** AssetPicker(搜索 + 画布行 + 项目最近网格[可滚]+浏览全部 + 上传 + 拖入),消费 useAssetPool
 - [ ] **P0.4** 节点级 onDrop(独立 hook,守巨壳基线)
-- [ ] **P1.1** AssetReference(声明式 slot 描述符:cardinality/persistAsEdge/form,R5)
-- [ ] **P1.2** 接生成节点 + 删旧三套(inline frame 菜单 104 行 + 源视频 30 行 + ReferenceSlots),净删
-- [ ] **P1.3** 连线→参考管道(数组 meta-only 不画线)
-- [ ] **走查自验收**:Playwright 走查 + 样张 v4 并排对账
+- [x] **P1.1** AssetReference(声明式 slot 描述符:form=single|array / persistAsEdge / numbered / max,R5)。
+  纯展示 + 回调驱动,消费 AssetTile + AssetPicker。
+- [x] **P1.2** 接生成节点 + 删旧三套(inline frame 菜单 ~106 行 + 源视频 ~30 行 + ReferenceSlots 整文件)。
+  NodeParameterControls 649→559(净删 90);写入逻辑复用已验证的 handleSlotAssignment/handleArrayAdd…
+  (单帧连边 / 数组 meta / 源视频 meta 按 slot 描述符分派);新增"选项目素材作单帧来源"路径(setSingleFrameUrlMeta)。
+  ReferenceSlots.tsx 删除(规则 1)。
+- [ ] **P1.3** 连线→参考管道(数组 meta-only 不画线)——连线加参考留待(现 picker 已覆盖画布/项目/上传三源)。
+- [x] **走查自验收**:`archetype-modebar.e2e.mjs` 17 断言全过(模式切换 / 尾帧槽 / **经新 picker 上传角色图→①徽标** /
+  character 提示 / HappyHorse 4 模式 / 设置弹层 / Fast 同族);`smoke.e2e.mjs` 10 断言(主链路回归)。截图人眼确认渲染对齐样张意图。
 - [x] **R1 传输(通用方案)**:vendor 声明 `assetIngestion`(upload-url / inline-base64 / none)+ 通用解析器
   `assetLocalization`(递归扫 nomi-local、按 strategy 解析、去重替换,全注入可单测)+ KIE 作首个 upload-url
   实现(免费 base64 端点 → data.downloadUrl)+ 接进 `executeProfileOperation` 发送前。文件侧抽 `localAssetFile`,

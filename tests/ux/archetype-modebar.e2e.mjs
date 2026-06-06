@@ -69,7 +69,7 @@ try {
   // 断言尾帧参考槽出现（首帧模式 1 槽 → 首尾帧 2 槽）+ 提示行更新
   const after = await win.evaluate(() => {
     const comp = document.querySelector(".generation-canvas-v2-node__composer");
-    const slots = comp ? comp.querySelectorAll('[aria-label="尾帧"]').length : 0;
+    const slots = comp ? comp.querySelectorAll('[aria-label="添加尾帧"]').length : 0;
     const text = comp ? (comp.innerText || "").replace(/\s+/g, " ") : "";
     return { slots, hasLastHint: /首帧 \+ 尾帧/.test(text) };
   });
@@ -90,8 +90,8 @@ try {
   const tmpPng = path.join(shotsDir, "_char1.png");
   fs.writeFileSync(tmpPng, Buffer.from(pngB64, "base64"));
   await win.locator('.generation-canvas-v2-node__composer button[aria-label="添加角色参考"]').first().click();
-  await win.waitForTimeout(400);
-  await win.locator('.generation-canvas-v2-node__composer input[type="file"][aria-label="上传角色参考"]').first().setInputFiles(tmpPng);
+  await win.waitForTimeout(400); // 等统一选择器(AssetPicker)弹出
+  await win.locator('.generation-canvas-v2-node__composer input[type="file"][aria-label="上传本地文件"]').first().setInputFiles(tmpPng);
   await win.waitForTimeout(2500); // 等本地素材导入
   await shot("05-omni-char1");
   const afterUpload = await win.evaluate(() => {
