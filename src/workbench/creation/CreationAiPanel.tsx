@@ -417,6 +417,7 @@ export default function CreationAiPanel(): JSX.Element {
           <NomiSelect
             ariaLabel="创作模式"
             leadingLabel="模式"
+            size="xs"
             title={activeMode.description}
             value={activeMode.id}
             options={CREATION_AI_MODES.map((mode) => ({ value: mode.id, label: mode.shortLabel }))}
@@ -425,9 +426,9 @@ export default function CreationAiPanel(): JSX.Element {
           <WorkbenchButton
             className={cn(
               'workbench-creation-ai__storyboard-chip',
-              'shrink-0 h-[30px] inline-flex items-center gap-[5px] px-2.5',
+              'shrink-0 h-6 inline-flex items-center gap-[5px] px-2',
               'border border-nomi-line rounded-full bg-nomi-paper',
-              'text-nomi-ink-80 text-[12.5px] font-medium cursor-pointer',
+              'text-nomi-ink-80 text-[11.5px] font-medium cursor-pointer',
               'hover:bg-nomi-accent-soft/40 hover:text-nomi-accent hover:border-[color-mix(in_srgb,var(--nomi-accent)_36%,transparent)]',
               'disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-nomi-paper disabled:hover:text-nomi-ink-80',
             )}
@@ -442,9 +443,9 @@ export default function CreationAiPanel(): JSX.Element {
           <WorkbenchButton
             className={cn(
               'workbench-creation-ai__fixation-chip',
-              'shrink-0 h-[30px] inline-flex items-center gap-[5px] px-2.5',
+              'shrink-0 h-6 inline-flex items-center gap-[5px] px-2',
               'border border-nomi-line rounded-full bg-nomi-paper',
-              'text-nomi-ink-80 text-[12.5px] font-medium cursor-pointer',
+              'text-nomi-ink-80 text-[11.5px] font-medium cursor-pointer',
               'hover:bg-nomi-accent-soft/40 hover:text-nomi-accent hover:border-[color-mix(in_srgb,var(--nomi-accent)_36%,transparent)]',
               'disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-nomi-paper disabled:hover:text-nomi-ink-80',
             )}
