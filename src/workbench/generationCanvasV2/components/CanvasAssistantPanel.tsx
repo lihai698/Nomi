@@ -1,5 +1,5 @@
-import { IconPlayerStopFilled, IconSend2, IconX } from '@tabler/icons-react'
-import { NomiAILabel, NomiSelect, WorkbenchButton, WorkbenchIconButton } from '../../../design'
+import { IconPlayerStopFilled, IconSend2, IconSparkles, IconX } from '@tabler/icons-react'
+import { NomiAILabel, NomiLogoMark, NomiSelect, WorkbenchButton, WorkbenchIconButton } from '../../../design'
 import React from 'react'
 import { cn } from '../../../utils/cn'
 import {
@@ -332,21 +332,24 @@ export default function CanvasAssistantPanel({
       data-collapsed="false"
       aria-label="生成区 AI 助手"
     >
+      {/* 样张头部：Nomi 标 + 「助手」+ 上下文胶囊（✦ 生成）+ 动作 + 收起。 */}
       <header className={cn(
-        'flex items-center justify-between gap-[10px]',
-        'min-h-[53px] px-4 py-[14px]',
+        'flex items-center justify-between gap-2 px-3 py-2',
         'border-b border-nomi-line-soft bg-nomi-paper',
       )}>
         <div className={cn('flex items-center gap-2 min-w-0')}>
-          <NomiAILabel suffix="生成" />
+          <NomiLogoMark size={18} />
+          <span className={cn('text-bodySm font-semibold text-nomi-ink')}>助手</span>
         </div>
-        <div className={cn('inline-flex items-center flex-nowrap gap-[6px] ml-auto')}>
+        <div className={cn('inline-flex items-center gap-2 ml-auto shrink-0')}>
+          <span className={cn('inline-flex items-center gap-1 text-micro text-nomi-ink-40 whitespace-nowrap')}>
+            <IconSparkles size={13} stroke={1.7} />生成
+          </span>
           <WorkbenchAiHeaderActions
-            className="generation-canvas-v2-assistant__shared-actions"
+            className={cn('generation-canvas-v2-assistant__shared-actions', 'inline-flex items-center flex-nowrap gap-1')}
             actionClassName={cn(
-              'min-w-[26px] w-[26px] h-[26px] inline-grid place-items-center',
-              'p-0 border-0 rounded-nomi-sm bg-transparent',
-              'text-nomi-ink-60 font-[inherit] text-[12.5px] cursor-pointer',
+              'size-6 inline-grid place-items-center',
+              'p-0 border-0 rounded-nomi-sm bg-transparent text-nomi-ink-60 cursor-pointer',
               'hover:bg-nomi-ink-05 hover:text-nomi-ink',
             )}
             onModelIntegration={openWorkbenchModelIntegration}
@@ -354,9 +357,8 @@ export default function CanvasAssistantPanel({
           />
           <WorkbenchIconButton
             className={cn(
-              'min-w-[26px] w-[26px] h-[26px] inline-grid place-items-center',
-              'p-0 border-0 rounded-nomi-sm bg-transparent',
-              'text-nomi-ink-60 font-[inherit] text-[12.5px] cursor-pointer',
+              'size-6 inline-grid place-items-center',
+              'p-0 border-0 rounded-nomi-sm bg-transparent text-nomi-ink-60 cursor-pointer',
               'hover:bg-nomi-ink-05 hover:text-nomi-ink',
             )}
             label="收起 AI"

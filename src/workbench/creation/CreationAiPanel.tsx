@@ -1,6 +1,6 @@
 import React from 'react'
-import { IconCursorText, IconFilePlus, IconMovie, IconPlayerStopFilled, IconReplace, IconSend2, IconSparkles } from '@tabler/icons-react'
-import { NomiAILabel, NomiLoadingMark, NomiSelect, WorkbenchButton, WorkbenchIconButton } from '../../design'
+import { IconCursorText, IconFilePlus, IconMovie, IconPencil, IconPlayerStopFilled, IconReplace, IconSend2, IconSparkles } from '@tabler/icons-react'
+import { NomiLoadingMark, NomiLogoMark, NomiSelect, WorkbenchButton, WorkbenchIconButton } from '../../design'
 import { NomiMarkdown } from '../common/NomiMarkdown'
 import { cn } from '../../utils/cn'
 import { runWorkbenchAgent, workbenchSessionKey, type ToolCallEvent } from '../ai/workbenchAgentRunner'
@@ -276,24 +276,27 @@ export default function CreationAiPanel(): JSX.Element {
           '[grid-area:header] flex items-center justify-between gap-[10px] min-w-0',
         )}
       >
-        <div className={cn('workbench-creation-ai__title', 'inline-flex items-center gap-2')}>
-          <NomiAILabel suffix="创作" />
+        {/* 样张头部：Nomi 标 + 「助手」+ 上下文胶囊（✎ 创作）。 */}
+        <div className={cn('workbench-creation-ai__title', 'inline-flex items-center gap-2 min-w-0')}>
+          <NomiLogoMark size={18} />
+          <span className={cn('text-bodySm font-semibold text-nomi-ink')}>助手</span>
         </div>
-        <WorkbenchAiHeaderActions
-          className={cn(
-            'workbench-creation-ai__header-actions',
-            'inline-flex items-center flex-nowrap gap-[6px] ml-auto whitespace-nowrap',
-          )}
-          actionClassName={cn(
-            // 对齐生成区头部图标钮：固定 26px 方钮（去掉 width:auto 的 .__header-action CSS）。
-            'min-w-[26px] w-[26px] h-[26px] inline-grid place-items-center shrink-0',
-            'p-0 border-0 rounded-nomi-sm bg-transparent text-nomi-ink-60 cursor-pointer',
-            'hover:bg-nomi-ink-05 hover:text-nomi-ink',
-            'focus-visible:outline-2 focus-visible:outline-workbench-focus focus-visible:outline-offset-2',
-          )}
-          onModelIntegration={openWorkbenchModelIntegration}
-          onNewConversation={handleNewConversation}
-        />
+        <div className={cn('inline-flex items-center gap-2 ml-auto shrink-0')}>
+          <span className={cn('inline-flex items-center gap-1 text-micro text-nomi-ink-40 whitespace-nowrap')}>
+            <IconPencil size={13} stroke={1.7} />创作
+          </span>
+          <WorkbenchAiHeaderActions
+            className={cn('inline-flex items-center flex-nowrap gap-1')}
+            actionClassName={cn(
+              'size-6 inline-grid place-items-center shrink-0',
+              'p-0 border-0 rounded-nomi-sm bg-transparent text-nomi-ink-60 cursor-pointer',
+              'hover:bg-nomi-ink-05 hover:text-nomi-ink',
+              'focus-visible:outline-2 focus-visible:outline-workbench-focus focus-visible:outline-offset-2',
+            )}
+            onModelIntegration={openWorkbenchModelIntegration}
+            onNewConversation={handleNewConversation}
+          />
+        </div>
       </header>
 
       <div
