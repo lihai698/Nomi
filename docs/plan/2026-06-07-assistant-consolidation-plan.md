@@ -72,12 +72,15 @@
 - [x] R8 样张：`docs/mockups/unified-assistant-panel.html` v4 已用户拍板
 - [x] 阶段 1a：抽共享执行层 applyCanvasToolCall
 - [x] 阶段 1c：定妆命名消歧义（立角色卡 / 基于此图定妆）
-- [x] 阶段 2：单一 app 级助手 dock（WorkbenchAssistantDock）——跟随 workspaceMode 切
-      body、右侧整高停靠、占位不遮挡、左缘拖宽、统一折叠、token 读数。**真机 Playwright
-      走查验证**（tests/ux/assistant-merge.walk.mjs）：三模式、折叠/展开、拖宽反流均通过。
-- [~] 阶段 2 余项（刻意暂留，低价值/高风险，附理由）：
-      · 拆 window 事件桥 → 现已低价值：生成面板 mount-and-hide 常驻，setTimeout(60) 竞态已
-        失效、桥被收敛在一处；移除=纯风险无收益。
-      · dangerous 标志 → 审计 honorable-mention，确认 UX 现可用，属小重构。
-      · 统一 composer/控件 → 重写两套可用 composer，高风险低边际收益；两 body 已共享 dock
-        与 chrome 一致性。
+- [×] 阶段 2：尝试过 app 级 dock（WorkbenchAssistantDock，step1 跟随上下文 / step2 整高
+      停靠+占位 / step3 token 读数），但**反复破坏原始布局**（遮挡底部、间距与原始不符、
+      底部按钮错位）。用户多轮反馈后判定：app 级提升与两面板各自嵌在 workspace 网格的现状
+      强耦合，硬提升=持续的布局回归。**已 revert，从 git 精确还原 C-2 之前的原始布局**
+      （创作 grid-cols-[minmax(0,900px)_344px] gap-5 / 生成 sidebar+overlay launcher），
+      真机走查确认与原始一致。
+- **教训**：两面板是各自完整、且与所在 workspace 布局耦合的 panel；「一个跟随上下文的
+      持久助手」要做对，需先解决「panel body 与 workspace 布局解耦」，不能直接把整 panel
+      提到 app 级浮层/侧栏（会丢原始网格的精确尺寸与留白）。后续若再做，应：① 先把每个 body
+      的 chrome/布局契约抽清；② 在不改原始网格尺寸的前提下注入统一容器；③ 每步真机走查对齐
+      原始基线像素。**当前保留原始双面板布局 + 已落地的 harness/C-1a/C-1c/#8 读数。**
+- 保留：H1（Stop/真abort/read try-catch）、C-1c（定妆消歧义）、#8 token 读数（在 header）。
