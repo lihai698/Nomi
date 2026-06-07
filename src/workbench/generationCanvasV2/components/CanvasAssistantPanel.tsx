@@ -1,5 +1,5 @@
 import { IconCornerDownLeft, IconPlayerStopFilled, IconSend2, IconSparkles, IconX } from '@tabler/icons-react'
-import { NomiAILabel, NomiLogoMark, NomiSelect, WorkbenchButton, WorkbenchIconButton } from '../../../design'
+import { NomiAILabel, NomiLoadingMark, NomiLogoMark, NomiSelect, WorkbenchButton, WorkbenchIconButton } from '../../../design'
 import React from 'react'
 import { cn } from '../../../utils/cn'
 import {
@@ -424,8 +424,13 @@ export default function CanvasAssistantPanel({
               )}
               data-role={message.role}
             >
-              {message.content}
-              {message.role !== 'user' ? (
+              {message.role === 'assistant' && message.content === '处理中...' ? (
+                // 与创作助手一致：消息处理中时左侧显示转动的 N（NomiLoadingMark），而非干巴巴的「处理中...」文字。
+                <NomiLoadingMark size={15} label="处理中" />
+              ) : (
+                message.content
+              )}
+              {message.role !== 'user' && message.content !== '处理中...' ? (
                 <AiReplyActionButton
                   className="generation-canvas-v2-assistant__reply-action"
                   content={message.content}
