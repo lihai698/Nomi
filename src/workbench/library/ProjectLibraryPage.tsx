@@ -30,7 +30,9 @@ function formatUpdatedAt(value: number): string {
   return new Date(value).toLocaleDateString('zh-CN')
 }
 
-function ThumbnailMosaic({ urls }: { urls: string[] }): JSX.Element {
+// memo 化：搜索/筛选触发父组件重渲时，urls 未变的封面不重渲（图多时省下整片缩略图重建）。
+// urls 每次是新数组引用，故用按值比较的 comparator。
+const ThumbnailMosaic = React.memo(function ThumbnailMosaic({ urls }: { urls: string[] }): JSX.Element {
   if (urls.length === 0) {
     // 未生成的项目无封面 → 只放中性占位图标；名称由卡片下方统一显示，缩略图里不再重复（去重）。
     return (
@@ -55,7 +57,7 @@ function ThumbnailMosaic({ urls }: { urls: string[] }): JSX.Element {
       ))}
     </div>
   )
-}
+}, (prev, next) => prev.urls.join('|') === next.urls.join('|'))
 
 export default function ProjectLibraryPage({ onOpenProject, onDeleteProject, onNewProject, onOpenFolder, onTryExample, onOpenModelCatalog, projects }: Props): JSX.Element {
   const [query, setQuery] = React.useState('')

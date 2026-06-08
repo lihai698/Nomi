@@ -253,9 +253,7 @@ function BaseGenerationNodeImpl({
             state.pendingConnectionSourceId !== "" &&
             state.pendingConnectionSourceId !== node.id,
     );
-    // perf：canvasZoom 仅在 resize/drag 的 pointer-move 处理器里用到，渲染输出从不读它。
-    // 之前响应式订阅它 → 每次缩放（连续变化）都把全部 N 个节点重渲一遍（缩放卡顿的元凶）。
-    // 改为按需 getState() 读取，彻底消除缩放时的全节点 fan-out 重渲。
+    // perf：canvasZoom 仅事件处理器用、渲染从不读它；改按需 getState() 避免缩放时全节点重渲。
     const panoramaFullscreenRef = React.useRef<(() => void) | null>(null);
     const panoramaFourViewRef = React.useRef<(() => void) | null>(null);
     // E11: provenance viewer open state (mounted into node header for AI-generated assets)
@@ -702,21 +700,17 @@ function BaseGenerationNodeImpl({
             event.currentTarget.value = "";
             if (!file) return;
             const createdAt = Date.now();
-            // 即时 base64 预览（短命），随后落盘换 nomi-local 替换掉，避免全景大图 base64 永久驻留。
+            // 即时 base64 预览（短命）→ 落盘换 nomi-local 替换，避免全景大图 base64 永久驻留。
             const reader = new FileReader();
             reader.onload = (loadEvent) => {
                 const dataUrl = loadEvent.target?.result;
                 if (typeof dataUrl !== "string") return;
-                updateNode(node.id, {
-                    result: { id: `panorama-${createdAt}`, type: "image", url: dataUrl, createdAt },
-                });
+                updateNode(node.id, { result: { id: `panorama-${createdAt}`, type: "image", url: dataUrl, createdAt } });
             };
             reader.readAsDataURL(file);
             void persistNodeImageFile(file, node.id).then((localUrl) => {
                 if (!localUrl) return;
-                updateNode(node.id, {
-                    result: { id: `panorama-asset-${createdAt}`, type: "image", url: localUrl, createdAt },
-                });
+                updateNode(node.id, { result: { id: `panorama-asset-${createdAt}`, type: "image", url: localUrl, createdAt } });
             });
         },
         [node.id, updateNode],

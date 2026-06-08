@@ -13,7 +13,7 @@ import { Portal } from '@mantine/core'
 import { IconPhoto, IconPlus, IconSearch, IconX } from '@tabler/icons-react'
 import { cn } from '../../utils/cn'
 import { useAssetPool } from './useAssetPool'
-import { filterAssets, type AssetKind } from './assetTypes'
+import { filterAssets, type AssetKind, type AssetRef } from './assetTypes'
 import { AssetThumb } from './AssetTile'
 
 const PANEL_WIDTH = 380
@@ -34,6 +34,34 @@ const KIND_LABEL: Record<AssetKind, string> = {
   video: '视频',
   audio: '音频',
 }
+
+// 单个素材格。memo 化：父组件（搜索/筛选/滚动）重渲时，未变的格子不重建（图多更省）。
+const AssetGridCell = React.memo(function AssetGridCell({ asset }: { asset: AssetRef }): JSX.Element {
+  return (
+    <div
+      className={cn(
+        'relative aspect-square rounded-nomi-sm border border-nomi-line overflow-hidden bg-nomi-ink-05',
+        'flex items-center justify-center',
+      )}
+      title={asset.name}
+    >
+      <AssetThumb asset={asset} />
+      <span className={cn(
+        'absolute top-1 left-1 px-1.5 py-px rounded-full text-micro leading-none',
+        'bg-[oklch(0.2_0.01_80/0.55)] text-nomi-paper backdrop-blur-sm',
+      )}>
+        {KIND_LABEL[asset.kind]}
+      </span>
+      <span className={cn(
+        'absolute left-0 right-0 bottom-0 px-1.5 pt-2.5 pb-1 text-micro text-nomi-paper',
+        'bg-gradient-to-t from-[oklch(0_0_0/0.6)] to-transparent',
+        'whitespace-nowrap overflow-hidden text-ellipsis',
+      )}>
+        {asset.name}
+      </span>
+    </div>
+  )
+})
 
 type Props = {
   opened: boolean
@@ -208,7 +236,8 @@ export function AssetLibraryPanel({ opened, onClose, projectId }: Props): JSX.El
           </div>
         </div>
 
-        {/* 网格 / 空态 */}
+        {/* 网格 / 空态。每个格子是 memo 化的 AssetGridCell：搜索/筛选重渲时未变的格子不重建；
+            配合 A-1 的 lazy/decode（离屏图不解码），图多时滚动顺滑、不掉帧。 */}
         {isEmpty ? (
           <div className={cn('flex-1 flex flex-col items-center justify-center gap-2.5 px-6 py-12 text-center')}>
             <IconPhoto size={34} stroke={1.4} className={cn('text-nomi-ink-30')} />
@@ -224,29 +253,7 @@ export function AssetLibraryPanel({ opened, onClose, projectId }: Props): JSX.El
         ) : (
           <div className={cn('flex-1 overflow-y-auto grid grid-cols-3 gap-2.5 px-3.5 pb-4 content-start')}>
             {visible.map((asset) => (
-              <div
-                key={asset.id}
-                className={cn(
-                  'relative aspect-square rounded-nomi-sm border border-nomi-line overflow-hidden bg-nomi-ink-05',
-                  'flex items-center justify-center',
-                )}
-                title={asset.name}
-              >
-                <AssetThumb asset={asset} />
-                <span className={cn(
-                  'absolute top-1 left-1 px-1.5 py-px rounded-full text-micro leading-none',
-                  'bg-[oklch(0.2_0.01_80/0.55)] text-nomi-paper backdrop-blur-sm',
-                )}>
-                  {KIND_LABEL[asset.kind]}
-                </span>
-                <span className={cn(
-                  'absolute left-0 right-0 bottom-0 px-1.5 pt-2.5 pb-1 text-micro text-nomi-paper',
-                  'bg-gradient-to-t from-[oklch(0_0_0/0.6)] to-transparent',
-                  'whitespace-nowrap overflow-hidden text-ellipsis',
-                )}>
-                  {asset.name}
-                </span>
-              </div>
+              <AssetGridCell key={asset.id} asset={asset} />
             ))}
           </div>
         )}
