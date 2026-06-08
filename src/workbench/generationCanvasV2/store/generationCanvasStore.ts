@@ -9,22 +9,43 @@ import {
   rollbackNodeHistory,
   upsertNode,
 } from '../model/graphOps'
-import { isGenerationNodeKind, isImageLikeGenerationNodeKind } from '../model/generationNodeKinds'
-import { nodeGroupSchema } from '../model/generationCanvasSchema'
-import { type CategoryId } from '../model/generationCanvasTypes'
+import { isImageLikeGenerationNodeKind } from '../model/generationNodeKinds'
 import type {
   GenerationCanvasEdge,
   GenerationCanvasNode,
   GenerationCanvasSnapshot,
   GenerationNodeKind,
-  GenerationNodeProgress,
   GenerationNodeResult,
   GenerationNodeRunRecord,
   GenerationNodeStatus,
-  GenerationNodeTaskKind,
   NodeGroup,
 } from '../model/generationCanvasTypes'
 import type { WorkbenchAiMessage } from '../../ai/workbenchAiTypes'
+import { CLIPBOARD_OFFSET, createClipboardNodeId, createGroupId, createNodeId, createRunId } from './canvasIds'
+import { type CanvasMutationOptions, bumpPersistRevision, isCategoryId, shouldPersistCanvasMutation } from './canvasGuards'
+import {
+  buildSelectedClipboard,
+  clearHistory,
+  cloneClipboardPayload,
+  getClipboard,
+  getHistoryFlags,
+  popRedo,
+  popUndo,
+  pushUndoSnapshot,
+  setClipboard,
+} from './canvasHistory'
+import {
+  type NodeProgressInput,
+  type NodeRunRecordInput,
+  type NodeRunRecordPatch,
+  createProgress,
+  getResultTaskKind,
+  getRunDurationSeconds,
+  mergeRunRecord,
+} from './runRecordHelpers'
+import { normalizeStoreSnapshot, seedNodes } from './canvasSnapshotNormalizer'
+
+export { __resetGenerationCanvasHistoryForTests } from './canvasHistory'
 
 type CreateNodeInput = {
   kind: GenerationNodeKind
@@ -33,24 +54,6 @@ type CreateNodeInput = {
   position?: { x: number; y: number }
   categoryId?: string
   select?: boolean
-}
-
-type NodeProgressInput = Omit<GenerationNodeProgress, 'updatedAt'> & {
-  updatedAt?: number
-}
-
-type NodeRunRecordInput = Omit<GenerationNodeRunRecord, 'id' | 'startedAt' | 'updatedAt'> & {
-  id?: string
-  startedAt?: number
-  updatedAt?: number
-}
-
-type NodeRunRecordPatch = Partial<Omit<GenerationNodeRunRecord, 'id' | 'startedAt'>> & {
-  updatedAt?: number
-}
-
-type CanvasMutationOptions = {
-  persist?: boolean
 }
 
 type GenerationCanvasState = {
@@ -122,255 +125,6 @@ type GenerationCanvasState = {
   rollbackHistory: (nodeId: string, resultId: string) => void
   readSnapshot: () => GenerationCanvasSnapshot
   restoreSnapshot: (snapshot: unknown) => void
-}
-
-type GenerationCanvasHistoryState = Pick<
-  GenerationCanvasState,
-  'nodes' | 'edges' | 'groups' | 'selectedNodeIds' | 'pendingConnectionSourceId'
->
-
-type GenerationCanvasClipboard = {
-  nodes: GenerationCanvasNode[]
-  edges: GenerationCanvasEdge[]
-}
-
-const HISTORY_LIMIT = 80
-const CLIPBOARD_OFFSET = 36
-
-let undoStack: GenerationCanvasHistoryState[] = []
-let redoStack: GenerationCanvasHistoryState[] = []
-let clipboard: GenerationCanvasClipboard | null = null
-
-function getHistoryFlags(): Pick<GenerationCanvasState, 'canUndo' | 'canRedo' | 'hasClipboard'> {
-  return {
-    canUndo: undoStack.length > 0,
-    canRedo: redoStack.length > 0,
-    hasClipboard: clipboard !== null,
-  }
-}
-
-function shouldPersistCanvasMutation(options?: CanvasMutationOptions): boolean {
-  return options?.persist !== false
-}
-
-function isCategoryId(value: unknown): value is CategoryId {
-  return typeof value === 'string' && value.trim().length > 0 // 自定义分类启用后不再限内置 5 个
-}
-
-function bumpPersistRevision(state: Pick<GenerationCanvasState, 'persistRevision'>): void {
-  state.persistRevision += 1
-}
-
-const seedNodes = [
-  createGenerationNode({
-    id: 'gen-v2-text-1',
-    kind: 'text',
-    title: '剧本片段',
-    x: 96,
-    y: 360,
-    prompt: '写下镜头、角色或画面提示词。',
-  }),
-  createGenerationNode({
-    id: 'gen-v2-image-1',
-    kind: 'image',
-    title: '关键画面',
-    x: 440,
-    y: 380,
-    prompt: '',
-  }),
-]
-
-function createNodeId(kind: GenerationNodeKind): string {
-  return `gen-v2-${kind}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-}
-
-function createGroupId(categoryId: CategoryId): string {
-  return `group-${categoryId}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
-}
-
-function createRunId(nodeId: string): string {
-  return `run-${nodeId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-function createClipboardNodeId(nodeId: string): string {
-  return `${nodeId}-copy-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-}
-
-function snapshotHistoryState(state: GenerationCanvasState): GenerationCanvasHistoryState {
-  return {
-    nodes: state.nodes,
-    edges: state.edges,
-    groups: state.groups,
-    selectedNodeIds: state.selectedNodeIds,
-    pendingConnectionSourceId: state.pendingConnectionSourceId,
-  }
-}
-
-function pushUndoSnapshot(state: GenerationCanvasState): void {
-  undoStack = [...undoStack, snapshotHistoryState(state)].slice(-HISTORY_LIMIT)
-  redoStack = []
-}
-
-function buildSelectedClipboard(state: GenerationCanvasState): GenerationCanvasClipboard | null {
-  const selected = new Set(state.selectedNodeIds)
-  if (!selected.size) return null
-  const nodes = state.nodes.filter((node) => selected.has(node.id))
-  if (!nodes.length) return null
-  return {
-    nodes,
-    edges: state.edges.filter((edge) => selected.has(edge.source) && selected.has(edge.target)),
-  }
-}
-
-function cloneClipboardPayload(payload: GenerationCanvasClipboard): GenerationCanvasHistoryState {
-  const idMap = new Map<string, string>()
-  const nodes = payload.nodes.map((node) => {
-    const nextId = createClipboardNodeId(node.id)
-    idMap.set(node.id, nextId)
-    return {
-      ...node,
-      id: nextId,
-      title: node.title ? `${node.title} 副本` : node.title,
-      position: {
-        x: node.position.x + CLIPBOARD_OFFSET,
-        y: node.position.y + CLIPBOARD_OFFSET,
-      },
-    }
-  })
-  const edges = payload.edges.flatMap((edge) => {
-    const source = idMap.get(edge.source)
-    const target = idMap.get(edge.target)
-    if (!source || !target) return []
-    return [{
-      ...edge,
-      id: `edge-${source}-${target}`,
-      source,
-      target,
-    }]
-  })
-  return {
-    nodes,
-    edges,
-    groups: [],
-    selectedNodeIds: nodes.map((node) => node.id),
-    pendingConnectionSourceId: '',
-  }
-}
-
-export function __resetGenerationCanvasHistoryForTests(): void {
-  undoStack = []
-  redoStack = []
-  clipboard = null
-}
-
-function getResultTaskKind(result: GenerationNodeResult): GenerationNodeTaskKind | undefined {
-  if (result.taskKind) return result.taskKind
-  if (result.type === 'text') return 'text'
-  if (result.type === 'image') return 'image'
-  if (result.type === 'video') return 'video'
-  return undefined
-}
-
-function createProgress(progress: NodeProgressInput, fallbackRunId?: string): GenerationNodeProgress {
-  const percent = typeof progress.percent === 'number' ? Math.min(100, Math.max(0, progress.percent)) : undefined
-  return {
-    ...progress,
-    runId: progress.runId ?? fallbackRunId,
-    percent,
-    updatedAt: progress.updatedAt ?? Date.now(),
-  }
-}
-
-function normalizeGenerationCanvasSnapshot(input: unknown): GenerationCanvasSnapshot {
-  if (!input || typeof input !== 'object') {
-    return {
-      nodes: seedNodes,
-      edges: [{ id: 'edge-gen-v2-text-1-gen-v2-image-1', source: 'gen-v2-text-1', target: 'gen-v2-image-1' }],
-      groups: [],
-      selectedNodeIds: [],
-    }
-  }
-  const raw = input as Record<string, unknown>
-  const nodes = Array.isArray(raw.nodes)
-    ? raw.nodes.flatMap((item): GenerationCanvasNode[] => {
-        if (!item || typeof item !== 'object') return []
-        const node = item as Record<string, unknown>
-        const id = typeof node.id === 'string' ? node.id.trim() : ''
-        const kind = isGenerationNodeKind(node.kind) ? node.kind : null
-        const positionRaw = node.position && typeof node.position === 'object' ? node.position as Record<string, unknown> : {}
-        const x = typeof positionRaw.x === 'number' && Number.isFinite(positionRaw.x) ? positionRaw.x : 0
-        const y = typeof positionRaw.y === 'number' && Number.isFinite(positionRaw.y) ? positionRaw.y : 0
-        if (!id || !kind) return []
-        const rawCategoryId = typeof node.categoryId === 'string' ? node.categoryId.trim() : undefined
-        const categoryId = isCategoryId(rawCategoryId) ? rawCategoryId : undefined
-        const { categoryId: _discardedCategoryId, ...nodeWithoutCategoryId } = node
-        const normalizedNode: Omit<GenerationCanvasNode, 'categoryId'> = {
-          ...(nodeWithoutCategoryId as Omit<GenerationCanvasNode, 'categoryId'>),
-          id,
-          kind,
-          title: typeof node.title === 'string' ? node.title : id,
-          position: { x, y },
-        }
-        return [categoryId ? { ...normalizedNode, categoryId } : normalizedNode]
-      })
-    : []
-  const nodeIds = new Set(nodes.map((node) => node.id))
-  const edges = Array.isArray(raw.edges)
-    ? raw.edges.flatMap((item): GenerationCanvasEdge[] => {
-        if (!item || typeof item !== 'object') return []
-        const edge = item as Record<string, unknown>
-        const id = typeof edge.id === 'string' ? edge.id.trim() : ''
-        const source = typeof edge.source === 'string' ? edge.source.trim() : ''
-        const target = typeof edge.target === 'string' ? edge.target.trim() : ''
-        if (!id || !source || !target || !nodeIds.has(source) || !nodeIds.has(target)) return []
-        return [{ ...(edge as GenerationCanvasEdge), id, source, target }]
-      })
-    : []
-  const selectedNodeIds = Array.isArray(raw.selectedNodeIds)
-    ? raw.selectedNodeIds.filter((id): id is string => typeof id === 'string' && nodeIds.has(id))
-    : []
-  const groups = Array.isArray(raw.groups)
-    ? raw.groups.flatMap((group): NodeGroup[] => {
-        const parsed = nodeGroupSchema.safeParse(group)
-        if (!parsed.success) return []
-        return [{
-          ...parsed.data,
-          nodeIds: Array.from(new Set(parsed.data.nodeIds.filter((id) => nodeIds.has(id)))),
-        }]
-      })
-    : []
-  return {
-    nodes,
-    edges,
-    groups,
-    selectedNodeIds,
-  }
-}
-
-function getRunDurationSeconds(run: Pick<GenerationNodeRunRecord, 'startedAt' | 'completedAt' | 'durationSeconds'>): number | undefined {
-  if (typeof run.durationSeconds === 'number') return run.durationSeconds
-  if (typeof run.completedAt !== 'number') return undefined
-  return Math.max(0, (run.completedAt - run.startedAt) / 1000)
-}
-
-function mergeRunRecord(
-  run: GenerationNodeRunRecord,
-  patch: NodeRunRecordPatch,
-  now = Date.now(),
-): GenerationNodeRunRecord {
-  const isTerminalStatus = patch.status === 'success' || patch.status === 'error' || patch.status === 'cancelled'
-  const completedAt = patch.completedAt ?? (isTerminalStatus ? now : run.completedAt)
-  const nextRun = {
-    ...run,
-    ...patch,
-    updatedAt: patch.updatedAt ?? now,
-    completedAt,
-    progress: isTerminalStatus && !patch.progress ? undefined : patch.progress ?? run.progress,
-  }
-  return {
-    ...nextRun,
-    durationSeconds: getRunDurationSeconds(nextRun),
-  }
 }
 
 export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscribeWithSelector(immer((set, get) => ({
@@ -517,14 +271,14 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
   copySelectedNodes: () => {
     const nextClipboard = buildSelectedClipboard(get())
     if (!nextClipboard) return
-    clipboard = nextClipboard
+    setClipboard(nextClipboard)
     set(getHistoryFlags())
   },
   cutSelectedNodes: () => {
     const currentState = get()
     const nextClipboard = buildSelectedClipboard(currentState)
     if (!nextClipboard) return
-    clipboard = nextClipboard
+    setClipboard(nextClipboard)
     pushUndoSnapshot(currentState)
     set((state) => {
       const next = removeNodes(state.nodes, state.edges, state.selectedNodeIds)
@@ -537,14 +291,15 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
   },
   pasteNodes: () => {
     const currentState = get()
-    if (!clipboard) return
-    const cloned = cloneClipboardPayload(clipboard)
+    const clipboardPayload = getClipboard()
+    if (!clipboardPayload) return
+    const cloned = cloneClipboardPayload(clipboardPayload)
     if (!cloned.nodes.length) return
     pushUndoSnapshot(currentState)
-    clipboard = {
+    setClipboard({
       nodes: cloned.nodes,
       edges: cloned.edges,
-    }
+    })
     set((state) => {
       state.nodes = [...state.nodes, ...cloned.nodes]
       state.edges = [...state.edges, ...cloned.edges]
@@ -556,10 +311,8 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
   },
   undo: () => {
     const currentState = get()
-    const previous = undoStack.at(-1)
+    const previous = popUndo(currentState)
     if (!previous) return
-    undoStack = undoStack.slice(0, -1)
-    redoStack = [...redoStack, snapshotHistoryState(currentState)].slice(-HISTORY_LIMIT)
     set((state) => {
       state.nodes = previous.nodes
       state.edges = previous.edges
@@ -572,10 +325,8 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
   },
   redo: () => {
     const currentState = get()
-    const next = redoStack.at(-1)
+    const next = popRedo(currentState)
     if (!next) return
-    redoStack = redoStack.slice(0, -1)
-    undoStack = [...undoStack, snapshotHistoryState(currentState)].slice(-HISTORY_LIMIT)
     set((state) => {
       state.nodes = next.nodes
       state.edges = next.edges
@@ -1102,10 +853,8 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
     }
   },
 	restoreSnapshot: (snapshot) => {
-	    const normalized = normalizeGenerationCanvasSnapshot(snapshot)
-	    undoStack = []
-    redoStack = []
-    clipboard = null
+	    const normalized = normalizeStoreSnapshot(snapshot)
+    clearHistory()
 	    set({
       isReady: true,
       persistRevision: get().persistRevision,
