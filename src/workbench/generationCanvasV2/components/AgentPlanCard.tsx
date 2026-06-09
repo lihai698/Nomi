@@ -46,6 +46,10 @@ export default function AgentPlanCard({ plan, resolveCall }: AgentPlanCardProps)
       title: node.title,
       prompt: editedPrompts[node.clientId] ?? node.prompt,
       ...(node.position ? { position: node.position } : {}),
+      // bug①：把 agent 建议的模型/参数透传给执行层（确认后写入 node.meta）。
+      ...(node.modelKey ? { modelKey: node.modelKey } : {}),
+      ...(node.modeId ? { modeId: node.modeId } : {}),
+      ...(node.params ? { params: node.params } : {}),
     }))
     resolveCall(
       plan.createCallId,

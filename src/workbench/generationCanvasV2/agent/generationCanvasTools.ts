@@ -14,6 +14,8 @@ export type CreateGenerationNodeToolInput = {
   title?: string
   prompt?: string
   position?: { x: number; y: number }
+  /** bug①：agent 建议的模型/参数（modelKey/modelVendor/archetype/标量参数），写入 node.meta。 */
+  meta?: Record<string, unknown>
 }
 
 export type GenerationCanvasToolResult<T = unknown> = {
@@ -59,7 +61,15 @@ export const generationCanvasTools = {
     return state.nodes.filter((node) => selected.has(node.id))
   },
   create_nodes(nodes: CreateGenerationNodeToolInput[]): GenerationCanvasNode[] {
-    return nodes.map((node) => useGenerationCanvasStore.getState().addNode(node))
+    return nodes.map((node) => {
+      const created = useGenerationCanvasStore.getState().addNode(node)
+      // agent 建议的模型/参数：addNode 走 createGenerationNode 不接 meta，这里用现有 updateNode
+      // 补写（初始 meta 为空，整体写入安全）——避开 871 满基线的 store 巨壳。
+      if (node.meta && Object.keys(node.meta).length > 0) {
+        useGenerationCanvasStore.getState().updateNode(created.id, { meta: node.meta })
+      }
+      return created
+    })
   },
   connect_nodes(edges: Array<Pick<GenerationCanvasEdge, 'source' | 'target'>>) {
     edges.forEach((edge) => useGenerationCanvasStore.getState().connectNodes(edge.source, edge.target))

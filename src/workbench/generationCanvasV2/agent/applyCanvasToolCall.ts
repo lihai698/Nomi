@@ -1,6 +1,8 @@
 import type { GenerationNodeKind } from '../model/generationCanvasTypes'
 import { getGenerationNodeDefaultTitle } from '../model/generationNodeKinds'
 import { generationCanvasTools, type CreateGenerationNodeToolInput } from './generationCanvasTools'
+import { listAvailableModelsForAgent, type AgentModelEntry } from './availableModels'
+import { buildPlannedNodeMeta } from './plannedNodeMeta'
 
 /**
  * Single source of truth for turning an agent canvas tool call into a real
@@ -22,11 +24,19 @@ export async function applyCanvasToolCall(toolName: string, args: unknown): Prom
 
   if (toolName === 'create_canvas_nodes') {
     const incoming = Array.isArray(record.nodes) ? record.nodes : []
+    // 任一节点带 modelKey 才加载可用模型清单（校验+补全 agent 选的模型/参数，否则零 IPC）。
+    const needsModels = incoming.some(
+      (raw) => raw && typeof raw === 'object' && typeof (raw as Record<string, unknown>).modelKey === 'string',
+    )
+    const entryByKey = new Map<string, AgentModelEntry>(
+      needsModels ? (await listAvailableModelsForAgent()).map((entry) => [entry.modelKey, entry]) : [],
+    )
     const inputs: CreateGenerationNodeToolInput[] = incoming.map((raw, index) => {
       const node = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
       const kind = (typeof node.kind === 'string' ? node.kind : 'image') as GenerationNodeKind
       const positionRecord =
         node.position && typeof node.position === 'object' ? (node.position as Record<string, unknown>) : null
+      const meta = buildPlannedNodeMeta(node, entryByKey)
       return {
         kind,
         title:
@@ -38,6 +48,7 @@ export async function applyCanvasToolCall(toolName: string, args: unknown): Prom
           x: typeof positionRecord?.x === 'number' ? positionRecord.x : 160 + index * 340,
           y: typeof positionRecord?.y === 'number' ? positionRecord.y : 260 + (index % 2) * 220,
         },
+        ...(meta ? { meta } : {}),
       }
     })
     const created = generationCanvasTools.create_nodes(inputs)
