@@ -120,6 +120,27 @@ export async function openDesktopAgentsChatStream(
       unsubscribe()
       unsubscribe = null
     }
+    // We just unsubscribed, so the backend's own `result`/`done` events (it
+    // emits them after the AbortController fires) will be dropped. Without a
+    // terminal event here the awaiting consumer (sendWorkbenchAiMessage) never
+    // resolves → the panel's `sending/busy` flag is stuck true forever → the
+    // Stop button never reverts and the spinner spins on. So synthesize a
+    // terminal `result` (carrying whatever streamed so far) + `done` to settle
+    // the whole await chain. These calls bypass the `aborted` guard because
+    // they go straight to `handlers.onEvent`, not through the IPC listener.
+    handlers.onEvent({
+      event: 'result',
+      data: {
+        response: {
+          id: `agent-cancelled-${Date.now()}`,
+          text: streamedText || '（已停止生成）',
+          raw: { cancelled: true },
+          toolCalls: [],
+          artifacts: [],
+        },
+      },
+    })
+    handlers.onEvent({ event: 'done', data: { reason: 'finished' } })
     if (sessionId) {
       try { await desktop.agents.cancelChatV2(sessionId) } catch { /* noop */ }
     }

@@ -588,7 +588,6 @@ export default function CanvasAssistantPanel({
             event.currentTarget.form?.requestSubmit()
           })}
           onPaste={handlePaste}
-          disabled={busy}
         />
         <div className={cn('flex items-center justify-between gap-2')}>
           <div className={cn('flex items-center gap-2 min-w-0')}>
