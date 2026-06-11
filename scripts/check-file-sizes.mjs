@@ -29,7 +29,8 @@ const ALLOWLIST = {
   "electron/runtime.ts": 759,
   "src/workbench/generationCanvas/nodes/BaseGenerationNode.tsx": 937,
   "src/workbench/generationCanvas/components/GenerationCanvas.tsx": 991,
-  "src/workbench/generationCanvas/store/generationCanvasStore.ts": 871,
+  // generationCanvasStore.ts 曾 871 行（巨壳）；S5-0 按 zustand slice 模式拆出 canvasStoreTypes.ts +
+  // canvasNodeActions.ts + canvasGraphActions.ts + canvasRunActions.ts 后壳文件缩到 161 < 800，已出白名单。
   // NodeParameterControls.tsx 曾 1097 行（巨壳）；C2b 抽出 controls/parameterControlModel.ts +
   // archetypeMeta.ts + ModeBar.tsx 后缩到 605 < 800 硬上限，已出白名单（Rule 12：逐步清空白名单）。
 };
