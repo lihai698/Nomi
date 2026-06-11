@@ -141,7 +141,7 @@ function capPayload(dir: string, seq: number, payload: Record<string, unknown>):
       out[key] = value;
       continue;
     }
-    const field: TruncatedPayloadField = { truncated: true, head: text.slice(0, HEAD_CHARS), byteSize: Buffer.byteLength(text), sha256: sha256(text) };
+    const field: TruncatedPayloadField = { truncated: true, head: text.slice(0, HEAD_CHARS), byteSize: Buffer.byteLength(text), sha256: sha256(text), valueKind: typeof value === "string" ? "string" : "json" };
     try {
       const sidecarDir = path.join(dir, "sidecar");
       fs.mkdirSync(sidecarDir, { recursive: true });
@@ -189,7 +189,24 @@ export function appendEvents(projectId: string, newEvents: readonly NewNomiEvent
   }
 }
 
-/** 读事件(全部段按 seq 升序),供轨迹查看/重放/评测消费。 */
+/** sidecar 回读:被截断的字段还原全文(S5-a3——否则 >4KB 的 canvas 事件重放会拿到残值)。 */
+function rehydratePayload(dir: string, payload: Record<string, unknown>): Record<string, unknown> {
+  let out: Record<string, unknown> | null = null;
+  for (const [key, value] of Object.entries(payload)) {
+    const field = value as Partial<TruncatedPayloadField> | null;
+    if (!field || typeof field !== "object" || field.truncated !== true || !field.sidecarRef) continue;
+    try {
+      const text = fs.readFileSync(path.join(dir, field.sidecarRef), "utf8");
+      if (!out) out = { ...payload };
+      out[key] = field.valueKind === "json" ? (JSON.parse(text) as unknown) : text;
+    } catch {
+      // sidecar 丢失:保留截断形态(head/sha256 仍可审计),不抛错
+    }
+  }
+  return out ?? payload;
+}
+
+/** 读事件(全部段按 seq 升序,截断字段经 sidecar 还原),供轨迹查看/重放/评测消费。 */
 export function readEvents(projectId: string, opts: { fromSeq?: number } = {}): NomiEvent[] {
   try {
     const state = initState(projectId);
@@ -198,7 +215,7 @@ export function readEvents(projectId: string, opts: { fromSeq?: number } = {}): 
     const events: NomiEvent[] = [];
     for (const segIndex of listSegments(state.dir)) {
       for (const event of parseLines(segmentPath(state.dir, segIndex))) {
-        if (event.seq > fromSeq) events.push(event);
+        if (event.seq > fromSeq) events.push({ ...event, payload: rehydratePayload(state.dir, event.payload) });
       }
     }
     return events;

@@ -72,17 +72,20 @@ describe("eventLogRepository", () => {
     expect(raw).not.toContain("sk-abcdefgh12345678");
   });
 
-  it("超 4KB 的 payload 字段截断并落 sidecar 引用", () => {
+  it("超 4KB 的 payload 字段截断落 sidecar;readEvents 回读还原全文(重放不拿残值)", () => {
     const big = "x".repeat(10_000);
+    const bigObject = { node: { id: "n1", prompt: "y".repeat(9_000) } };
     appendEvents("p1", [evt("agent.tool.completed", { resultHead: big, small: "ok" })]);
-    const [event] = readEvents("p1");
-    const field = event.payload.resultHead as { truncated: boolean; head: string; sidecarRef?: string; byteSize: number };
-    expect(field.truncated).toBe(true);
-    expect(field.head.length).toBeLessThanOrEqual(256);
-    expect(field.byteSize).toBe(10_000);
-    expect(event.payload.small).toBe("ok");
-    const sidecar = path.join(tmpRoot, "p1", ".nomi", "events", field.sidecarRef!);
-    expect(fs.readFileSync(sidecar, "utf8")).toBe(big);
+    appendEvents("p1", [evt("canvas.node.added", bigObject)]);
+    // 磁盘上的 JSONL 行是截断形态(防爆炸)
+    const raw = fs.readFileSync(path.join(tmpRoot, "p1", ".nomi", "events", "log-0.jsonl"), "utf8");
+    expect(raw).toContain('"truncated":true');
+    expect(raw.length).toBeLessThan(big.length);
+    // readEvents 经 sidecar 还原:字符串原样、对象 JSON.parse 回结构
+    const [first, second] = readEvents("p1");
+    expect(first.payload.resultHead).toBe(big);
+    expect(first.payload.small).toBe("ok");
+    expect(second.payload.node).toEqual(bigObject.node);
   });
 
   it("项目不可解析时静默跳过(旁路绝不打断主流程)", () => {

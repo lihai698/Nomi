@@ -115,6 +115,28 @@ export function applyCanvasEvent(projection: CanvasProjection, event: Replayable
         groups: projection.groups.filter((candidate) => candidate.id !== groupId),
       }
     }
+    case 'canvas.node.run-updated': {
+      // run 域终态收敛(S5-a3):后态整节点替换——内部时间戳/runs 合并逻辑无需镜像
+      const node = payload.node as GenerationCanvasNode | undefined
+      if (!node?.id) return projection
+      return { ...projection, nodes: projection.nodes.map((candidate) => (candidate.id === node.id ? node : candidate)) }
+    }
+    case 'canvas.edge.added': {
+      // 整边对象(paste 等克隆路径:边 id 已定,不能走 connectNodes 重铸 id)
+      const edge = payload.edge as GenerationCanvasEdge | undefined
+      if (!edge?.id) return projection
+      return { ...projection, edges: [...projection.edges.filter((candidate) => candidate.id !== edge.id), edge] }
+    }
+    case 'canvas.snapshot.restored': {
+      // 全量后态(undo/redo/hydrate 的影子记账;S5-b 翻正后 undo 改为按 txn 重放)
+      const snapshot = payload.snapshot as Partial<CanvasProjection> | undefined
+      if (!snapshot) return projection
+      return {
+        nodes: Array.isArray(snapshot.nodes) ? snapshot.nodes : [],
+        edges: Array.isArray(snapshot.edges) ? snapshot.edges : [],
+        groups: Array.isArray(snapshot.groups) ? snapshot.groups : [],
+      }
+    }
     case 'canvas.groups.reordered': {
       const groups = payload.groups as NodeGroup[] | undefined
       if (!Array.isArray(groups)) return projection

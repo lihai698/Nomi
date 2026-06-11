@@ -15,6 +15,7 @@ import {
   setClipboard,
 } from './canvasHistory'
 import { normalizeStoreSnapshot, seedNodes } from './canvasSnapshotNormalizer'
+import { emitCanvasGesture } from '../events/canvasEventEmitter'
 import type { GenerationCanvasState } from './canvasStoreTypes'
 import { createCanvasNodeActions } from './canvasNodeActions'
 import { createCanvasGraphActions } from './canvasGraphActions'
@@ -71,6 +72,7 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
     const currentState = get()
     const nextClipboard = buildSelectedClipboard(currentState)
     if (!nextClipboard) return
+    const removedIds = [...currentState.selectedNodeIds]
     setClipboard(nextClipboard)
     pushUndoSnapshot(currentState)
     set((state) => {
@@ -81,6 +83,7 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
       bumpPersistRevision(state)
       Object.assign(state, getHistoryFlags())
     })
+    emitCanvasGesture(removedIds.map((nodeId) => ({ type: 'canvas.node.removed', payload: { nodeId } })))
   },
   pasteNodes: () => {
     const currentState = get()
@@ -101,6 +104,10 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
       bumpPersistRevision(state)
       Object.assign(state, getHistoryFlags())
     })
+    emitCanvasGesture([
+      ...cloned.nodes.map((node) => ({ type: 'canvas.node.added', payload: { node } })),
+      ...cloned.edges.map((edge) => ({ type: 'canvas.edge.added', payload: { edge } })),
+    ])
   },
   undo: () => {
     const currentState = get()
@@ -115,6 +122,8 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
       bumpPersistRevision(state)
       Object.assign(state, getHistoryFlags())
     })
+    // 影子记账:撤销=全量后态(S5-b 翻正后改为按 txn 重放;此处先保 replay≡snapshot 恒真)
+    emitCanvasGesture([{ type: 'canvas.snapshot.restored', payload: { snapshot: { nodes: previous.nodes, edges: previous.edges, groups: previous.groups } } }])
   },
   redo: () => {
     const currentState = get()
@@ -129,6 +138,7 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
       bumpPersistRevision(state)
       Object.assign(state, getHistoryFlags())
     })
+    emitCanvasGesture([{ type: 'canvas.snapshot.restored', payload: { snapshot: { nodes: next.nodes, edges: next.edges, groups: next.groups } } }])
   },
   readSnapshot: () => {
     const state = get()
@@ -154,6 +164,8 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
       canvasOffset: { x: 0, y: 0 },
       ...getHistoryFlags(),
     })
+    // hydrate 即 genesis(影子期):之后的重放从这帧起步;S5-b 翻正后由 lastAppliedSeq 接管
+    emitCanvasGesture([{ type: 'canvas.snapshot.restored', payload: { snapshot: { nodes: normalized.nodes, edges: normalized.edges, groups: normalized.groups } } }])
   },
   ...createCanvasNodeActions(set, get, store),
   ...createCanvasGraphActions(set, get, store),

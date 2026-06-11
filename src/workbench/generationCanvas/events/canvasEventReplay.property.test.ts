@@ -34,6 +34,13 @@ type Op =
   | { kind: 'removeFromGroup'; pick: number }
   | { kind: 'reorder'; pickGroup: number; pickGroup2: number }
   | { kind: 'moveGroupNodes'; pickGroup: number; dx: number; dy: number }
+  | { kind: 'status'; pick: number; status: 'queued' | 'running' | 'success' | 'error' | 'idle' }
+  | { kind: 'appendRun'; pick: number }
+  | { kind: 'addResult'; pick: number; url: string }
+  | { kind: 'cut' }
+  | { kind: 'paste' }
+  | { kind: 'undo' }
+  | { kind: 'redo' }
 
 const CATEGORIES = ['shots', 'characters', 'scenes'] as const
 const opArbitrary: fc.Arbitrary<Op> = fc.oneof(
@@ -67,6 +74,13 @@ const opArbitrary: fc.Arbitrary<Op> = fc.oneof(
   fc.record({ kind: fc.constant<'removeFromGroup'>('removeFromGroup'), pick: fc.nat(99) }),
   fc.record({ kind: fc.constant<'reorder'>('reorder'), pickGroup: fc.nat(99), pickGroup2: fc.nat(99) }),
   fc.record({ kind: fc.constant<'moveGroupNodes'>('moveGroupNodes'), pickGroup: fc.nat(99), dx: fc.integer({ min: -300, max: 300 }), dy: fc.integer({ min: -300, max: 300 }) }),
+  fc.record({ kind: fc.constant<'status'>('status'), pick: fc.nat(99), status: fc.constantFrom<'queued' | 'running' | 'success' | 'error' | 'idle'>('queued', 'running', 'success', 'error', 'idle') }),
+  fc.record({ kind: fc.constant<'appendRun'>('appendRun'), pick: fc.nat(99) }),
+  fc.record({ kind: fc.constant<'addResult'>('addResult'), pick: fc.nat(99), url: fc.constantFrom('https://cdn/a.png', 'https://cdn/b.mp4') }),
+  fc.record({ kind: fc.constant<'cut'>('cut') }),
+  fc.record({ kind: fc.constant<'paste'>('paste') }),
+  fc.record({ kind: fc.constant<'undo'>('undo') }),
+  fc.record({ kind: fc.constant<'redo'>('redo') }),
 )
 
 function applyOp(op: Op): void {
@@ -201,6 +215,33 @@ function applyOp(op: Op): void {
       if (group) store.moveGroupNodes(group.id, { x: op.dx, y: op.dy })
       return
     }
+    case 'status': {
+      const target = pickNode(op.pick)
+      if (target) store.setNodeStatus(target.id, op.status, op.status === 'error' ? 'boom' : undefined)
+      return
+    }
+    case 'appendRun': {
+      const target = pickNode(op.pick)
+      if (target) store.appendNodeRun(target.id, { status: 'queued', startedAt: 1000, updatedAt: 1000 })
+      return
+    }
+    case 'addResult': {
+      const target = pickNode(op.pick)
+      if (target) store.addNodeResult(target.id, { id: `r-${target.id}-${op.url.length}`, url: op.url, createdAt: 2000 } as never)
+      return
+    }
+    case 'cut':
+      store.cutSelectedNodes()
+      return
+    case 'paste':
+      store.pasteNodes()
+      return
+    case 'undo':
+      store.undo()
+      return
+    case 'redo':
+      store.redo()
+      return
   }
 }
 
@@ -229,5 +270,15 @@ describe('S5-a replay ≡ snapshot(属性测试,CI 安全网)', () => {
       }),
       { numRuns: 60 },
     )
+  })
+
+  it('setNodeProgress(轮询 tick)不发事件——瞬态不入日志(§4.3 终态收敛)', () => {
+    __resetGenerationCanvasHistoryForTests()
+    useGenerationCanvasStore.getState().restoreSnapshot({ nodes: [], edges: [], groups: [] })
+    const node = useGenerationCanvasStore.getState().addNode({ kind: 'image', title: 'n', prompt: 'p' })
+    captured = []
+    useGenerationCanvasStore.getState().setNodeProgress(node.id, { phase: 'generating', message: '生成中' })
+    useGenerationCanvasStore.getState().setNodeProgress(node.id, { phase: 'generating', message: '还在生成' })
+    expect(captured).toEqual([])
   })
 })

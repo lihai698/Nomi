@@ -7,7 +7,7 @@ import { getDesktopBridge } from '../../../desktop/bridge'
 
 export type CanvasShadowEvent = {
   id: string
-  source: 'user' | 'agent'
+  source: 'user' | 'agent' | 'runtime'
   txnId: string
   type: string
   payload: Record<string, unknown>
@@ -53,7 +53,7 @@ function flushNow(): void {
  */
 export function emitCanvasGesture(
   events: readonly { type: string; payload: Record<string, unknown> }[],
-  opts: { source?: 'user' | 'agent'; txnId?: string } = {},
+  opts: { source?: 'user' | 'agent' | 'runtime'; txnId?: string } = {},
 ): void {
   if (events.length === 0) return
   const txnId = opts.txnId ?? `txn_${crypto.randomUUID().slice(0, 10)}`

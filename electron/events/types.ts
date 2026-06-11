@@ -51,5 +51,7 @@ export type TruncatedPayloadField = {
   head: string;
   byteSize: number;
   sha256: string;
+  /** 原值类型:string 原样回读,json 经 JSON.parse 回读(sidecar 回读用,S5-a3)。 */
+  valueKind: "string" | "json";
   sidecarRef?: string;
 };

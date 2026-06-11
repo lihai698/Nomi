@@ -3,9 +3,18 @@ import type { GenerationNodeRunRecord } from '../model/generationCanvasTypes'
 import { createRunId } from './canvasIds'
 import { bumpPersistRevision } from './canvasGuards'
 import { createProgress, getResultTaskKind, getRunDurationSeconds, mergeRunRecord } from './runRecordHelpers'
+import { emitCanvasGesture } from '../events/canvasEventEmitter'
 import type { CanvasRunActions, CanvasSliceCreator } from './canvasStoreTypes'
 
-export const createCanvasRunActions: CanvasSliceCreator<CanvasRunActions> = (set) => ({
+// S5-a3 run 域记账 = 终态收敛:setNodeProgress(每 1.5s 轮询 tick)不入日志(§4.3 瞬态),
+// 终态 action 发后态整节点(canvas.node.run-updated)——内部时间戳逻辑再复杂,后态都构造性精确;
+// 重放在终态收敛(重放到中途的日志不会出僵尸 running,这正是重启后想要的)。
+export const createCanvasRunActions: CanvasSliceCreator<CanvasRunActions> = (set, get) => {
+  const emitRunUpdated = (nodeId: string) => {
+    const node = get().nodes.find((candidate) => candidate.id === nodeId)
+    if (node) emitCanvasGesture([{ type: 'canvas.node.run-updated', payload: { node } }], { source: 'runtime' })
+  }
+  return {
   setNodeStatus: (nodeId, status, error) => {
     set((state) => {
       const node = state.nodes.find((candidate) => candidate.id === nodeId)
@@ -22,6 +31,7 @@ export const createCanvasRunActions: CanvasSliceCreator<CanvasRunActions> = (set
       node.runs = runs
       bumpPersistRevision(state)
     })
+    emitRunUpdated(nodeId)
   },
   setNodeProgress: (nodeId, progress) => {
     set((state) => {
@@ -72,6 +82,7 @@ export const createCanvasRunActions: CanvasSliceCreator<CanvasRunActions> = (set
       node.runs = [normalizedRun, ...(node.runs || []).filter((entry) => entry.id !== normalizedRun.id)]
       bumpPersistRevision(state)
     })
+    emitRunUpdated(nodeId)
     return normalizedRun
   },
   trackNodeRun: (nodeId, runId, patch) => {
@@ -90,6 +101,7 @@ export const createCanvasRunActions: CanvasSliceCreator<CanvasRunActions> = (set
       node.runs = nextRuns
       bumpPersistRevision(state)
     })
+    emitRunUpdated(nodeId)
   },
   addNodeResult: (nodeId, result) => {
     set((state) => {
@@ -123,13 +135,17 @@ export const createCanvasRunActions: CanvasSliceCreator<CanvasRunActions> = (set
       node.runs = runs
       bumpPersistRevision(state)
     })
+    emitRunUpdated(nodeId)
   },
   rollbackHistory: (nodeId, resultId) => {
+    const before = get().nodes
     set((state) => {
       const nextNodes = rollbackNodeHistory(state.nodes, nodeId, resultId)
       if (nextNodes === state.nodes) return
       state.nodes = nextNodes
       bumpPersistRevision(state)
     })
+    if (get().nodes !== before) emitRunUpdated(nodeId)
   },
-})
+  }
+}
