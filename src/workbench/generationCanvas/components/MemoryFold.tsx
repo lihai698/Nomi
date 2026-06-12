@@ -27,6 +27,7 @@ export function MemoryFold({ refreshKey }: { refreshKey: number }): JSX.Element 
   const [editingId, setEditingId] = React.useState<string | null>(null)
   const [draft, setDraft] = React.useState('')
 
+  // 重取时机:挂载+每轮对话后(refreshKey)+每次展开(锁/解锁等画布动作不经对话,展开时要新鲜)。
   React.useEffect(() => {
     let alive = true
     void fetchProjectMemoryFacts().then((next) => {
@@ -35,7 +36,7 @@ export function MemoryFold({ refreshKey }: { refreshKey: number }): JSX.Element 
     return () => {
       alive = false
     }
-  }, [refreshKey])
+  }, [refreshKey, open])
 
   if (facts.length === 0) return null
 
