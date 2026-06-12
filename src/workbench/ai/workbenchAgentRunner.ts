@@ -34,9 +34,10 @@ export type ToolCallEvent = {
   args: unknown
   /** Resolve with the user's decision; main process feeds the result back to the model.
    *  S6-0: ok 分支可带 effectiveArgs/overridesDelta(对账快照+偏好增量),透传至 proposal.approved。
-   *  S6-1: ok.silent=只读直通不记 approved;false.denied=gate 拒绝走 gate.denied。 */
+   *  S6-1: ok.silent=只读直通不记 approved;false.denied=gate 拒绝走 gate.denied。
+   *  S6-2: ok.proposalId=提议事务标注,approved 事件级字段。 */
   confirm: (decision:
-    | { ok: true; result?: unknown; effectiveArgs?: Record<string, unknown>; overridesDelta?: Record<string, unknown>; silent?: boolean }
+    | { ok: true; result?: unknown; effectiveArgs?: Record<string, unknown>; overridesDelta?: Record<string, unknown>; silent?: boolean; proposalId?: string }
     | { ok: false; message?: string; denied?: boolean }) => Promise<void>
 }
 

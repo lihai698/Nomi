@@ -10,6 +10,7 @@ import { workbenchSessionKey } from '../../ai/workbenchAgentRunner'
 import { clearWorkbenchAgentSession } from '../../../api/desktopClient'
 import { generationCanvasTools } from '../agent/generationCanvasTools'
 import { applyCanvasToolCall } from '../agent/applyCanvasToolCall'
+import { applyProposalBatch } from '../agent/proposalTxn'
 import { evaluateGate } from '../agent/gate'
 import {
   buildStoryboardPlanningMessage,
@@ -41,15 +42,14 @@ type PendingToolCall = {
   toolCallId: string
   toolName: string
   args: unknown
-  /**
-   * Confirm or reject the pending tool call. `overrides` lets the UI
-   * patch the args before they are applied — used by the plan card so a
-   * user-edited prompt overrides the agent's original suggestion.
-   */
-  confirm: (
-    decision: { ok: true; result?: unknown } | { ok: false; message?: string },
-    overrides?: Record<string, unknown>,
-  ) => Promise<void>
+  /** 纯传输:把判决回给主进程(LLM 的 confirm 通道)。应用画布变更走 approveCalls 的事务批。 */
+  confirm: ToolCallEvent['confirm']
+}
+
+/** 批准请求:plan card 把用户编辑过的字段作为 overrides 传回(S6-0 的 overridesDelta 来源)。 */
+export type ApproveCallRequest = {
+  toolCallId: string
+  overrides?: Record<string, unknown>
 }
 
 function summarizeToolCall(toolName: string, args: unknown): string {
@@ -105,16 +105,25 @@ export default function CanvasAssistantPanel({
   const [pendingToolCalls, setPendingToolCalls] = React.useState<PendingToolCall[]>([])
   const threadBottomRef = React.useRef<HTMLDivElement | null>(null)
 
+  // toolCallId → pending call 查找表(approveCalls 事务批要按序取多个 call,函数式 setState 取不到)。
+  const pendingByIdRef = React.useRef(new Map<string, PendingToolCall>())
+
+  /** 拒绝/传输专用:把判决直接回给 LLM 并移除卡片(批准走 approveCalls 的事务批)。 */
   const resolvePending = React.useCallback((
     toolCallId: string,
-    decision: { ok: true; result?: unknown } | { ok: false; message?: string },
-    overrides?: Record<string, unknown>,
+    decision: { ok: false; message?: string },
   ) => {
-    setPendingToolCalls((current) => {
-      const target = current.find((item) => item.toolCallId === toolCallId)
-      if (target) void target.confirm(decision, overrides)
-      return current.filter((item) => item.toolCallId !== toolCallId)
-    })
+    const target = pendingByIdRef.current.get(toolCallId)
+    pendingByIdRef.current.delete(toolCallId)
+    if (target) void target.confirm(decision)
+    setPendingToolCalls((current) => current.filter((item) => item.toolCallId !== toolCallId))
+  }, [])
+
+  // S6-2 提议事务:批准 = 一笔原子批量(plan card 的 create+connect 共一个 proposalId)。
+  // 实现挂在 turn 闭包里(要数 toolActionCount),组件层暴露稳定回调。
+  const approveCallsRef = React.useRef<((requests: ApproveCallRequest[]) => Promise<void>) | null>(null)
+  const approveCalls = React.useCallback((requests: ApproveCallRequest[]) => {
+    void approveCallsRef.current?.(requests)
   }, [])
 
   // Exposed for the V2 agent client (wired in B6) so the panel can render
@@ -122,8 +131,14 @@ export default function CanvasAssistantPanel({
   // session. We surface it via a ref so the call site doesn't have to
   // re-render on every state change.
   const pendingToolCallsRef = React.useRef({
-    enqueue: (call: PendingToolCall) => setPendingToolCalls((current) => [...current, call]),
-    clear: () => setPendingToolCalls([]),
+    enqueue: (call: PendingToolCall) => {
+      pendingByIdRef.current.set(call.toolCallId, call)
+      setPendingToolCalls((current) => [...current, call])
+    },
+    clear: () => {
+      pendingByIdRef.current.clear()
+      setPendingToolCalls([])
+    },
   })
   const draft = useGenerationCanvasStore((state) => state.generationAiDraft)
   const messages = useGenerationCanvasStore((state) => state.generationAiMessages)
@@ -207,6 +222,54 @@ export default function CanvasAssistantPanel({
       // 本轮模型是否发出过任何 tool 调用（含只读）。0 = 模型只回文字、没触发任何操作——
       // 自动选模型撞到不会工具调用的模型时的典型「只说不做」（2026-06-07 走查 P0）。
       let toolEmittedCount = 0
+      // S6-2 提议事务批:用户点「确认」后整批原子应用——全成 committed,中途失败补偿回滚
+      // (零半截)。先落地后回话:LLM 收到的每步成败与画布事实一致。
+      approveCallsRef.current = async (requests: ApproveCallRequest[]) => {
+        const items = requests
+          .map((request) => ({ request, call: pendingByIdRef.current.get(request.toolCallId) }))
+          .filter((item): item is { request: ApproveCallRequest; call: PendingToolCall } => Boolean(item.call))
+        if (items.length === 0) return
+        // 立即摘卡防双击;事务结果经 transport 回 LLM,卡不复原(与既有 resolve 即摘一致)。
+        const ids = new Set(items.map((item) => item.request.toolCallId))
+        items.forEach((item) => pendingByIdRef.current.delete(item.request.toolCallId))
+        setPendingToolCalls((current) => current.filter((item) => !ids.has(item.toolCallId)))
+        const steps = items.map(({ request, call }) => {
+          const baseArgs = (call.args && typeof call.args === 'object') ? call.args as Record<string, unknown> : {}
+          return {
+            toolCallId: call.toolCallId,
+            toolName: call.toolName,
+            effectiveArgs: request.overrides ? { ...baseArgs, ...request.overrides } : baseArgs,
+            overridesDelta: request.overrides,
+            transport: call.confirm,
+          }
+        })
+        const outcome = await applyProposalBatch(
+          steps.map(({ toolCallId, toolName, effectiveArgs }) => ({ toolCallId, toolName, effectiveArgs })),
+        )
+        if (outcome.status === 'committed') {
+          toolActionCount += steps.length
+          for (let index = 0; index < steps.length; index += 1) {
+            const step = steps[index]
+            await step.transport({
+              ok: true,
+              result: outcome.results[index],
+              effectiveArgs: step.effectiveArgs,
+              ...(step.overridesDelta ? { overridesDelta: step.overridesDelta } : {}),
+              proposalId: outcome.proposalId,
+            })
+          }
+        } else {
+          // 整笔失败:每步如实回话(LLM 可重新规划),画布已由补偿回滚到提议前(I3)。
+          for (let index = 0; index < steps.length; index += 1) {
+            const message = index === outcome.failedIndex
+              ? outcome.reason
+              : index < outcome.failedIndex
+                ? `已回滚:第 ${outcome.failedIndex + 1} 步(${steps[outcome.failedIndex].toolName})失败——${outcome.reason}`
+                : `未执行:第 ${outcome.failedIndex + 1} 步失败,整批已回滚`
+            await steps[index].transport({ ok: false, message })
+          }
+        }
+      }
       try {
         const result = await sendGenerationCanvasAgentMessage({
           message: text || '请看这些附件',
@@ -243,36 +306,13 @@ export default function CanvasAssistantPanel({
               })()
               return
             }
-            // ask:写/破坏性操作排队,等用户经 pending 卡显式点头。
+            // ask:写/破坏性操作排队,等用户经 pending 卡显式点头。confirm 纯传输——
+            // 批准的应用走 approveCalls 的事务批(S6-2),拒绝直接回传零痕迹。
             pendingToolCallsRef.current.enqueue({
               toolCallId: event.toolCallId,
               toolName: event.toolName,
               args: event.args,
-              confirm: async (decision, overrides) => {
-                if (decision.ok) {
-                  const baseArgs = (event.args && typeof event.args === 'object')
-                    ? event.args as Record<string, unknown>
-                    : {}
-                  const effectiveArgs = overrides ? { ...baseArgs, ...overrides } : baseArgs
-                  try {
-                    const result = await applyCanvasToolCall(event.toolName, effectiveArgs)
-                    toolActionCount += 1
-                    // S6-0:把对账的「米」随判决一起带回——effectiveArgs 是合并后全量快照,
-                    // overridesDelta 是用户实际改动的字段(无改动则不带,避免空对象进日志)。
-                    await event.confirm({
-                      ok: true,
-                      result,
-                      effectiveArgs,
-                      ...(overrides ? { overridesDelta: overrides } : {}),
-                    })
-                  } catch (error: unknown) {
-                    const message = error instanceof Error && error.message ? error.message : String(error)
-                    await event.confirm({ ok: false, message })
-                  }
-                } else {
-                  await event.confirm(decision)
-                }
-              },
+              confirm: event.confirm,
             })
           },
         })
@@ -307,6 +347,7 @@ export default function CanvasAssistantPanel({
       } finally {
         setBusy(false)
         cancelRef.current = null
+        approveCallsRef.current = null
       }
     })()
   }, [appendMessage, attachments, busy, clearAttachments, mode, selectedNodes, setDraft, setMessages, snapshot, updateMessage])
@@ -356,6 +397,7 @@ export default function CanvasAssistantPanel({
   }, [setCollapsed, submitAgentMessage])
 
   const handleNewConversation = React.useCallback(() => {
+    pendingByIdRef.current.clear()
     setPendingToolCalls([])
     clearAttachments()
     resetConversation()
@@ -532,7 +574,7 @@ export default function CanvasAssistantPanel({
           return (
             <div className={cn('flex flex-col gap-3')}>
               {plan ? (
-                <AgentPlanCard plan={plan} resolveCall={resolvePending} />
+                <AgentPlanCard plan={plan} approveCalls={approveCalls} rejectCall={(toolCallId) => resolvePending(toolCallId, { ok: false, message: 'rejected by user' })} />
               ) : null}
               {remaining.length > 0 ? (
                 <div
@@ -574,7 +616,7 @@ export default function CanvasAssistantPanel({
                             'h-7 px-3 rounded-nomi-sm border-0 bg-nomi-ink text-nomi-paper text-[12px] cursor-pointer',
                             'hover:bg-nomi-accent',
                           )}
-                          onClick={() => resolvePending(call.toolCallId, { ok: true, result: { confirmed: true } })}
+                          onClick={() => approveCalls([{ toolCallId: call.toolCallId }])}
                         >
                           确认
                         </WorkbenchButton>

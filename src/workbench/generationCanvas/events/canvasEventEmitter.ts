@@ -5,11 +5,14 @@
 // 50ms/20 条先到先 flush;bridge 缺失(测试/旧 preload)或 IO 失败一律静默——绝不影响画布。
 import { getDesktopBridge } from '../../../desktop/bridge'
 import { appendToUndoJournal } from './canvasUndoJournal'
+import { getActiveCanvasGestureContext } from './canvasGestureContext'
 
 export type CanvasShadowEvent = {
   id: string
   source: 'user' | 'agent' | 'runtime'
   txnId: string
+  /** agent 提议事务标注(S6-2):整笔撤销与对账按它过滤。 */
+  proposalId?: string
   type: string
   payload: Record<string, unknown>
 }
@@ -70,18 +73,24 @@ function flushNow(): void {
 /**
  * 一次用户手势 = 一个 txnId(undo 的最小单位,§1.1)。
  * 一个 action 调用产生的全部事件经一次 emitCanvasGesture 发出,共享 txnId。
+ * S6-2:agent 提议事务经 withCanvasGestureContext 设环境上下文——途经的 action 不传
+ * opts 也能统一拿到 source:'agent' + 事务级 txnId/proposalId(显式 opts 仍优先)。
  */
 export function emitCanvasGesture(
   events: readonly { type: string; payload: Record<string, unknown> }[],
   opts: { source?: 'user' | 'agent' | 'runtime'; txnId?: string } = {},
 ): void {
   if (events.length === 0) return
-  const txnId = opts.txnId ?? `txn_${crypto.randomUUID().slice(0, 10)}`
+  const ctx = getActiveCanvasGestureContext()
+  const txnId = opts.txnId ?? ctx?.txnId ?? `txn_${crypto.randomUUID().slice(0, 10)}`
+  const source = opts.source ?? ctx?.source ?? 'user'
+  const proposalId = ctx?.proposalId
   const out = events.map((event) =>
     Object.freeze({
       id: mintId(),
-      source: opts.source ?? 'user',
+      source,
       txnId,
+      ...(proposalId ? { proposalId } : {}),
       type: event.type,
       // 深拷贝成 plain JSON:杜绝 immer draft/共享引用混进日志(§4.4 纪律)。
       payload: JSON.parse(JSON.stringify(event.payload)) as Record<string, unknown>,

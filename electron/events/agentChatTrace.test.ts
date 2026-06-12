@@ -39,6 +39,7 @@ describe("agentChatTrace — S6-0 对账的米", () => {
       ok: true,
       effectiveArgs: { nodeId: "n1", prompt: "用户改后的提示词" },
       overridesDelta: { prompt: "用户改后的提示词" },
+      proposalId: "prop_abc123",
     });
 
     const events = readEvents("p1");
@@ -52,6 +53,9 @@ describe("agentChatTrace — S6-0 对账的米", () => {
     expect(approved!.payload.effectiveArgs).toEqual({ nodeId: "n1", prompt: "用户改后的提示词" });
     // 偏好增量:只记用户实际改动的字段。
     expect(approved!.payload.overridesDelta).toEqual({ prompt: "用户改后的提示词" });
+    // S6-2:proposalId/txnId 落事件级字段(与画布事件/txn.committed 同键 join)。
+    expect(approved!.proposalId).toBe("prop_abc123");
+    expect(approved!.txnId).toBe("txn_prop_abc123");
   });
 
   it("无 override 时不写空 overridesDelta(空对象不进日志)", () => {

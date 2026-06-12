@@ -6,21 +6,12 @@ import { listAvailableModelsForAgent, type AgentModelEntry } from '../agent/avai
 
 export { summarizeAgentPlan }
 
-export type PendingToolCall = {
-  toolCallId: string
-  toolName: string
-  args: unknown
-  confirm: (decision: { ok: true; result?: unknown } | { ok: false; message?: string }) => Promise<void>
-}
-
 type AgentPlanCardProps = {
   plan: AgentPlanSummary
-  /** Resolve a single tool call with the given decision (used internally). */
-  resolveCall: (
-    toolCallId: string,
-    decision: { ok: true; result?: unknown } | { ok: false; message?: string },
-    overrides?: Record<string, unknown>,
-  ) => void
+  /** S6-2 提议事务:确认 = 整批原子批准(create+connect 共一个 proposalId,中途失败补偿回滚)。 */
+  approveCalls: (requests: { toolCallId: string; overrides?: Record<string, unknown> }[]) => void
+  /** 拒绝单个 call(画布零痕迹)。 */
+  rejectCall: (toolCallId: string) => void
 }
 
 // 从计划节点 + 可用模型清单算出要展示的「模型/比例/清晰度」chip 文案。
@@ -63,7 +54,7 @@ function PendingChip({ label, value }: { label?: string; value: string }): JSX.E
  * AI 把 create_canvas_nodes (+ optional connect) 折叠成一张可确认的卡:每个镜头展示
  * 模型/比例/清晰度(agent 配的,「待你看」高亮) + prompt 常驻可编辑,一键确认整批落地。
  */
-export default function AgentPlanCard({ plan, resolveCall }: AgentPlanCardProps): JSX.Element {
+export default function AgentPlanCard({ plan, approveCalls, rejectCall }: AgentPlanCardProps): JSX.Element {
   const [editedPrompts, setEditedPrompts] = React.useState<Record<string, string>>(() => {
     const initial: Record<string, string> = {}
     plan.nodes.forEach((node) => { initial[node.clientId] = node.prompt })
@@ -91,22 +82,19 @@ export default function AgentPlanCard({ plan, resolveCall }: AgentPlanCardProps)
       ...(node.modeId ? { modeId: node.modeId } : {}),
       ...(node.params ? { params: node.params } : {}),
     }))
-    resolveCall(
-      plan.createCallId,
-      { ok: true, result: { confirmed: true } },
-      { nodes: patchedNodes, summary: plan.summary },
-    )
-    if (plan.connectCallId) {
-      resolveCall(plan.connectCallId, { ok: true, result: { confirmed: true } })
-    }
-  }, [editedPrompts, plan, resolveCall])
+    // S6-2:create+connect 一笔事务批准——共一个 proposalId,connect 失败则 create 也回滚。
+    approveCalls([
+      { toolCallId: plan.createCallId, overrides: { nodes: patchedNodes, summary: plan.summary } },
+      ...(plan.connectCallId ? [{ toolCallId: plan.connectCallId }] : []),
+    ])
+  }, [editedPrompts, plan, approveCalls])
 
   const handleRejectAll = React.useCallback(() => {
-    resolveCall(plan.createCallId, { ok: false, message: 'rejected by user' })
+    rejectCall(plan.createCallId)
     if (plan.connectCallId) {
-      resolveCall(plan.connectCallId, { ok: false, message: 'rejected by user' })
+      rejectCall(plan.connectCallId)
     }
-  }, [plan, resolveCall])
+  }, [plan, rejectCall])
 
   return (
     <div

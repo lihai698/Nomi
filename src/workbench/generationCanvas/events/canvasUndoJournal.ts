@@ -5,6 +5,7 @@
 // 撤销粒度与旧栈逐手势一致(addNode 后的默认参数 patch 不设 barrier,跟旧行为一样随上一 barrier 回退)。
 // 内存:HISTORY_LIMIT=80 维持;最老 barrier 被挤出时把前缀压进 base(紧凑化),journal 不无界。
 import { applyCanvasEvent, emptyCanvasProjection, type CanvasProjection } from './canvasEventReducer'
+import { getActiveCanvasGestureContext } from './canvasGestureContext'
 
 type JournalEvent = { type: string; payload: Record<string, unknown> }
 
@@ -32,8 +33,11 @@ export function getHistoryFlags(): { canUndo: boolean; canRedo: boolean } {
   return { canUndo: undoBarriers.length > 0, canRedo: redoBarriers.length > 0 }
 }
 
-/** 同名兼容旧 API:在写操作前打 barrier(参数保留签名但不再拷贝状态)。 */
+/** 同名兼容旧 API:在写操作前打 barrier(参数保留签名但不再拷贝状态)。
+ *  S6-2:提议事务期间(suppressUndoBarriers)action 级 barrier 不打——
+ *  整笔提议=一次用户意志=一个 Cmd+Z 步,事务自己在边界打。 */
 export function pushUndoSnapshot(_state?: unknown): void {
+  if (getActiveCanvasGestureContext()?.suppressUndoBarriers) return
   undoBarriers.push(journal.length)
   redoBarriers = []
   if (undoBarriers.length > HISTORY_LIMIT) {
@@ -62,6 +66,21 @@ export function popRedo(): CanvasProjection | undefined {
   redoBarriers = redoBarriers.slice(0, -1)
   undoBarriers = [...undoBarriers, journal.length].slice(-HISTORY_LIMIT)
   return replayTo(position)
+}
+
+/** S6-2 事务边界:记录当前日志位置(abort 清理的锚点)。 */
+export function getUndoJournalPosition(): number {
+  return journal.length
+}
+
+/**
+ * S6-2 abort 清理:撤掉位置 ≥ position 的全部 barrier(含事务自己打的那个)。
+ * 净零事务(应用+补偿)留在 journal 里无害——前缀重放天然容忍中段净零事件;
+ * 但指向事务中段的 barrier 必须拔掉,否则 Cmd+Z 会复活半截态。
+ */
+export function dropUndoBarriersAfter(position: number): void {
+  undoBarriers = undoBarriers.filter((barrier) => barrier < position)
+  redoBarriers = redoBarriers.filter((barrier) => barrier < position)
 }
 
 /** 切项目/hydrate:历史清零(会话内撤销语义,跨会话历史只在磁盘日志供审计)。 */

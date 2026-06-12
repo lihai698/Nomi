@@ -79,7 +79,8 @@ export type AgentChatV2ToolDecision =
   // overridesDelta=用户改了 AI 提议的哪些字段(记忆提炼的最强偏好信号)。二者只进轨迹,
   // 不污染回喂 LLM 的 result(IPC 层只取 result.resolve)。
   // S6-1 silent=只读 allow 自动放行,不记 proposal.approved(§6.1 纯噪声不入)。
-  | { ok: true; result?: unknown; effectiveArgs?: Record<string, unknown>; overridesDelta?: Record<string, unknown>; silent?: boolean }
+  // S6-2 proposalId=提议事务标注(approved 事件挂上它,与画布事件/txn.committed 同键可 join)。
+  | { ok: true; result?: unknown; effectiveArgs?: Record<string, unknown>; overridesDelta?: Record<string, unknown>; silent?: boolean; proposalId?: string }
   // S6-1 denied=gate 判定拒绝(非用户拒),走 gate.denied 而非 proposal.rejected。
   | { ok: false; message?: string; denied?: boolean }
 

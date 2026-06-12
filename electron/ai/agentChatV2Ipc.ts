@@ -82,8 +82,9 @@ export function registerAgentChatV2Ipc(): void {
     toolCallId: string;
     // S6-0:ok 分支携 effectiveArgs/overridesDelta —— 进 proposal.approved 供对账,result.resolve 不取它。
     // S6-1:ok.silent=只读放行不记 approved;false.denied=gate 拒绝走 gate.denied。
+    // S6-2:ok.proposalId —— approved 事件级事务标注,与画布事件/txn.committed 同键 join。
     decision:
-      | { ok: true; result?: unknown; effectiveArgs?: Record<string, unknown>; overridesDelta?: Record<string, unknown>; silent?: boolean }
+      | { ok: true; result?: unknown; effectiveArgs?: Record<string, unknown>; overridesDelta?: Record<string, unknown>; silent?: boolean; proposalId?: string }
       | { ok: false; message?: string; denied?: boolean };
   }) => {
     const session = agentChatV2Sessions.get(payload.sessionId);
@@ -98,6 +99,7 @@ export function registerAgentChatV2Ipc(): void {
           ok: true,
           effectiveArgs: payload.decision.effectiveArgs,
           overridesDelta: payload.decision.overridesDelta,
+          proposalId: payload.decision.proposalId,
         });
       }
       pending.resolve({ ok: true, result: payload.decision.result ?? null });

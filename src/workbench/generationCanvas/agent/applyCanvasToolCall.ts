@@ -3,6 +3,7 @@ import { getDefaultCategoryForNodeKind, getGenerationNodeDefaultTitle } from '..
 import { generationCanvasTools, type CreateGenerationNodeToolInput } from './generationCanvasTools'
 import { listAvailableModelsForAgent, type AgentModelEntry } from './availableModels'
 import { buildPlannedNodeMeta } from './plannedNodeMeta'
+import { withCanvasGestureContext, type CanvasGestureContext } from '../events/canvasGestureContext'
 
 // 批量创建节点的布局由渲染层 derive，而不是信任 LLM 发来的像素坐标（prompt 里硬编码
 // 单行坐标会让 6+ 节点横向溢出视口、适应视图后节点变得极小）。按节点数算近似正方网格，
@@ -42,8 +43,12 @@ function resolveNodeId(id: string): string {
   return clientIdRegistry.get(id) ?? id
 }
 
-export async function applyCanvasToolCall(toolName: string, args: unknown): Promise<unknown> {
+export async function applyCanvasToolCall(toolName: string, args: unknown, gesture?: CanvasGestureContext): Promise<unknown> {
   const record = args && typeof args === 'object' ? (args as Record<string, unknown>) : {}
+  // S6-2:提议事务把手势上下文传进来,store 变更段(纯同步)包在上下文里——途经 action
+  // 发出的画布事件统一携带 source:'agent'+txnId/proposalId。只包同步段,await 间隙不持有
+  // (异步持有会让并行的用户手势串台,见 canvasGestureContext 纪律)。
+  const inCtx = <T,>(fn: () => T): T => (gesture ? withCanvasGestureContext(gesture, fn) : fn())
 
   if (toolName === 'read_canvas_state') {
     return generationCanvasTools.read_canvas()
@@ -88,7 +93,7 @@ export async function applyCanvasToolCall(toolName: string, args: unknown): Prom
         ...(meta ? { meta } : {}),
       }
     })
-    const created = generationCanvasTools.create_nodes(inputs)
+    const created = inCtx(() => generationCanvasTools.create_nodes(inputs))
     const clientIdToNodeId: Record<string, string> = {}
     incoming.forEach((raw, index) => {
       const node = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
@@ -110,7 +115,7 @@ export async function applyCanvasToolCall(toolName: string, args: unknown): Prom
         target: resolveNodeId(String(edge.targetClientId || edge.target || '').trim()),
       }))
       .filter((edge) => edge.source && edge.target)
-    const { connected, skipped } = generationCanvasTools.connect_nodes(edges)
+    const { connected, skipped } = inCtx(() => generationCanvasTools.connect_nodes(edges))
     // 诚实回报:被跳过的吊边如实告诉 LLM(它可以纠正),不静默吞。
     return { connectedCount: connected, ...(skipped.length > 0 ? { skippedEdges: skipped } : {}) }
   }
@@ -118,7 +123,7 @@ export async function applyCanvasToolCall(toolName: string, args: unknown): Prom
   if (toolName === 'set_node_prompt') {
     const nodeId = resolveNodeId(String(record.nodeId || '').trim())
     const prompt = typeof record.prompt === 'string' ? record.prompt : ''
-    const node = generationCanvasTools.update_node_prompt(nodeId, prompt)
+    const node = inCtx(() => generationCanvasTools.update_node_prompt(nodeId, prompt))
     if (!node) throw new Error('node_not_found')
     return { nodeId: node.id }
   }
@@ -127,7 +132,7 @@ export async function applyCanvasToolCall(toolName: string, args: unknown): Prom
     const nodeIds = Array.isArray(record.nodeIds)
       ? record.nodeIds.map((id) => resolveNodeId(String(id || '').trim())).filter(Boolean)
       : []
-    const deleted = generationCanvasTools.delete_nodes(nodeIds)
+    const deleted = inCtx(() => generationCanvasTools.delete_nodes(nodeIds))
     return { deletedNodeIds: deleted }
   }
 

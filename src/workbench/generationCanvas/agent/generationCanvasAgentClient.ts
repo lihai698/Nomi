@@ -3,6 +3,8 @@ import { runWorkbenchAgent, workbenchSessionKey, type ToolCallEvent } from '../.
 import type { GenerationCanvasSnapshot, GenerationCanvasNode } from '../model/generationCanvasTypes'
 import { getAgentCreatableGenerationNodeKinds } from '../model/generationNodeKinds'
 import { applyCanvasToolCall } from './applyCanvasToolCall'
+import { applyProposalBatch } from './proposalTxn'
+import { evaluateGate } from './gate'
 import { listAvailableModelsForAgent, formatAvailableModelsForPrompt } from './availableModels'
 
 export type { ToolCallEvent } from '../../ai/workbenchAgentRunner'
@@ -97,17 +99,30 @@ function buildGenerationCanvasAgentPrompt(input: SendGenerationCanvasAgentMessag
  */
 async function defaultExecuteToolCall(event: ToolCallEvent): Promise<void> {
   const { toolName, args, confirm } = event
-  try {
-    const result = await applyCanvasToolCall(toolName, args)
+  // S6-1/S6-2:auto 路径同样过 gate(此前完全绕过)——只读直通 silent;写操作代用户点头,
+  // 但仍走提议事务(proposalId 贯穿、txn 事件入账,与面板路径同一台账)。
+  const decision = evaluateGate({ kind: 'tool-call', toolName, args })
+  if (decision.outcome === 'deny') {
+    await confirm({ ok: false, message: decision.reason, denied: true })
+    return
+  }
+  if (decision.outcome === 'allow') {
+    try {
+      const result = await applyCanvasToolCall(toolName, args)
+      await confirm({ ok: true, result, silent: true })
+    } catch (error: unknown) {
+      const message = error instanceof Error && error.message ? error.message : String(error)
+      await confirm({ ok: false, message })
+    }
+    return
+  }
+  const effectiveArgs = (args && typeof args === 'object') ? args as Record<string, unknown> : {}
+  const outcome = await applyProposalBatch([{ toolCallId: event.toolCallId, toolName, effectiveArgs }])
+  if (outcome.status === 'committed') {
     // S6-0:auto-execute 无用户 override,effectiveArgs ≡ args(对账统一有米,无 overridesDelta)。
-    await confirm({
-      ok: true,
-      result,
-      ...(args && typeof args === 'object' ? { effectiveArgs: args as Record<string, unknown> } : {}),
-    })
-  } catch (error: unknown) {
-    const message = error instanceof Error && error.message ? error.message : String(error)
-    await confirm({ ok: false, message })
+    await confirm({ ok: true, result: outcome.results[0], effectiveArgs, proposalId: outcome.proposalId })
+  } else {
+    await confirm({ ok: false, message: outcome.reason })
   }
 }
 

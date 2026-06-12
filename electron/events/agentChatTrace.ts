@@ -113,11 +113,12 @@ export function traceChatEvent(sessionId: string, event: unknown): void {
 
 /** 确认门判决旁路(挂在 confirmTool 处理器)。
  *  S6-0:approved 携 effectiveArgs(合并后全量快照,对账逐字段比对的米)+ overridesDelta
- *  (用户改了哪些字段,记忆提炼的最强偏好信号);二者缺省则不写,空对象不进日志。 */
+ *  (用户改了哪些字段,记忆提炼的最强偏好信号);二者缺省则不写,空对象不进日志。
+ *  S6-2:proposalId 落事件级字段(连带 txnId=txn_<proposalId>,与画布事件同键 join)。 */
 export function traceToolDecision(
   sessionId: string,
   toolCallId: string,
-  decision: { ok: boolean; message?: string; effectiveArgs?: Record<string, unknown>; overridesDelta?: Record<string, unknown> },
+  decision: { ok: boolean; message?: string; effectiveArgs?: Record<string, unknown>; overridesDelta?: Record<string, unknown>; proposalId?: string },
 ): void {
   const trace = turns.get(sessionId);
   if (!trace) return;
@@ -125,6 +126,7 @@ export function traceToolDecision(
     source: "user",
     type: decision.ok ? "agent.proposal.approved" : "agent.proposal.rejected",
     ...(trace.proposedIds.has(toolCallId) ? { causeId: trace.proposedIds.get(toolCallId) } : {}),
+    ...(decision.proposalId ? { proposalId: decision.proposalId, txnId: `txn_${decision.proposalId}` } : {}),
     payload: decision.ok
       ? {
           toolCallId,
