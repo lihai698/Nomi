@@ -123,6 +123,41 @@
       font-size: 14px;
     }
 
+    .button.sm {
+      height: 28px;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+
+    /* ===== 动作卡片（O2 拍板）：主入口的尺寸/形态/位置三重区隔 ===== */
+    .action-cards { display: flex; gap: 14px; }
+
+    .action-card {
+      display: flex; align-items: center; gap: 14px; text-align: left;
+      width: 280px; height: 88px; padding: 0 20px;
+      border: 1px solid var(--nomi-line);
+      border-radius: var(--nomi-radius);
+      background: var(--nomi-paper);
+      box-shadow: var(--nomi-shadow-sm);
+      cursor: pointer;
+    }
+
+    .action-card .ic {
+      width: 40px; height: 40px; flex: none;
+      display: grid; place-items: center;
+      border-radius: 999px;
+      background: var(--nomi-ink-05);
+      color: var(--nomi-ink-80);
+      font-size: 18px;
+    }
+
+    .action-card .t { display: block; font-size: 14px; font-weight: 700; }
+    .action-card .d { display: block; margin-top: 2px; font-size: 12px; color: var(--nomi-ink-60); }
+
+    .action-card.primary { border-color: var(--nomi-ink); background: var(--nomi-ink); color: var(--nomi-paper); }
+    .action-card.primary .ic { background: color-mix(in oklch, var(--nomi-paper) 14%, var(--nomi-ink)); color: var(--nomi-paper); }
+    .action-card.primary .d { color: color-mix(in oklch, var(--nomi-paper) 72%, var(--nomi-ink)); }
+
     /* ===== 库页骨架 ===== */
     .library-shell { display: flex; flex-direction: column; gap: 20px; }
 
@@ -170,9 +205,6 @@
       gap: 8px;
       flex-wrap: wrap;
     }
-
-    /* 弱入口与项目操作之间留分组距离：层级靠间距，不靠双 border */
-    .action-row .group-gap { width: 12px; }
 
     /* ===== 模型状态条（条件出现，是模型接入的唯一升权形态）===== */
     .status-panel {
@@ -580,12 +612,18 @@
           <h1 class="brand"><span class="mark">N</span>Nomi 项目库</h1>
           <label class="demo-toggle"><input id="toggle-no-model" type="checkbox" /> 演示：缺文本模型时的状态</label>
         </div>
-        <div class="action-row" aria-label="开始一个项目">
-          <button class="button subtle" id="model-entry">⌁ 模型接入</button>
-          <span class="group-gap" aria-hidden="true"></span>
-          <button class="button">▣ 打开已有文件夹</button>
-          <button class="button primary">＋ 新建空白项目</button>
-        </div>
+        <button class="button sm subtle" id="model-entry">⌁ 模型接入</button>
+      </div>
+
+      <div class="action-cards" aria-label="开始一个项目">
+        <button class="action-card primary">
+          <span class="ic">＋</span>
+          <span><span class="t">新建空白项目</span><span class="d">从一段文字或想法开始</span></span>
+        </button>
+        <button class="action-card">
+          <span class="ic">▣</span>
+          <span><span class="t">打开已有文件夹</span><span class="d">把素材文件夹变成项目</span></span>
+        </button>
       </div>
 
       <section class="status-panel" id="model-banner" hidden aria-label="模型状态">
@@ -596,17 +634,16 @@
         <button class="button primary">接入文本模型</button>
       </section>
 
-      <div class="toolbar">
-        <div class="search">⌕ 搜索项目</div>
-      </div>
-
-      <div class="section-head">
-        <h2 class="section-title">最近项目</h2>
-        <div class="segmented" aria-label="按来源筛选">
-          <button class="active">全部 78</button>
-          <button>本地新建 75</button>
-          <button>外部文件夹 3</button>
+      <div class="toolbar" style="justify-content: space-between;">
+        <div class="section-head">
+          <h2 class="section-title">最近项目</h2>
+          <div class="segmented" aria-label="按来源筛选">
+            <button class="active">全部 78</button>
+            <button>本地新建 75</button>
+            <button>外部文件夹 3</button>
+          </div>
         </div>
+        <div class="search" style="width: 280px;">⌕ 搜索项目</div>
       </div>
 
       <section class="projects" aria-label="最近项目">
@@ -616,7 +653,7 @@
         <article class="project-card"><div class="thumb">film</div><div class="card-body"><div><h3 class="card-title">示例：30 秒产品介绍</h3><div class="card-time">1 天前</div></div><button class="icon-button" title="打开项目文件夹">▣</button></div></article>
       </section>
     </section>
-    <p class="note">A：按钮三档层级 —— 实心（新建空白项目）＞描边（打开已有文件夹）＞无边框弱按钮（模型接入，用间距与项目操作分组）。缺文本模型时：弱按钮隐藏、状态条升权为实心主按钮（单一入口；此时页面有两颗实心钮，但分属「中断任务条 / 常驻页头」两个区域，取舍见 spec）。筛选改名词（本地新建 / 外部文件夹）与动作动词区隔。实现注意：顶栏「打开已有文件夹」与卡片「打开项目文件夹（reveal）」必须用不同 Tabler 图标，卡片图标钮 hover 才显。</p>
+    <p class="note">A（O2 动作卡片定稿）：两个主入口升级为 88px 高动作卡片（实心 ink 主卡 + 描边次卡，各带一行用途说明），尺寸 / 形态 / 位置三重区隔；模型接入降为右上 28px 弱文字钮。搜索右移与「最近项目」同行，纵向密度更好。缺文本模型时：弱钮隐藏、状态条插在动作卡下方（实心按钮升权，单一入口）——状态条按钮与动作卡形态尺度不同，不构成双主钮竞争。筛选改名词（本地新建 / 外部文件夹）。实现注意：主卡「＋」与次卡「▣」用 Tabler 图标（IconPlus / IconFolderOpen），项目卡 reveal 钮用另一图标且 hover 才显。</p>
   </main>
 
   <!-- ============ B：空库首启 ============ -->

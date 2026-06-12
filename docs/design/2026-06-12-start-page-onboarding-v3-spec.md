@@ -2,8 +2,9 @@
 
 日期：2026-06-12
 样张（验收合同）：`docs/design/mockups/2026-06-12-start-page-onboarding-v3.html`
-截图：`docs/design/reviews/2026-06-12-start-v3-{a,a2,b,c,d}-*.png`
-状态：**待用户拍板**（R8 步骤 4）
+布局选项板（已拍板 O2）：`docs/design/mockups/2026-06-12-start-page-layout-options-v4.html`
+截图：`docs/design/reviews/2026-06-12-start-v3-{a,a2,b,c,d}-*.png`、`2026-06-12-start-v4-o{1,2,3}-*.png`
+状态：A 屏布局已拍板 O2 动作卡片；整体方案待用户最终确认后进入实现（R8 步骤 4）
 
 ## 1. 背景与 v2 的洞
 
@@ -33,12 +34,17 @@ v2 经评审发现的洞（本版逐条修复）：
 
 ## 3. 四屏规范要点
 
-### A 项目库（常态）
-- 按钮三档层级：实心 `bg-nomi-ink`（新建空白项目，行尾最重位）＞描边 `border-nomi-line bg-nomi-paper`（打开已有文件夹）＞无边框 subtle `text-nomi-ink-60`（模型接入）；弱钮与项目操作之间留 12px 分组距，不加 divider
+### A 项目库（常态）—— 布局拍板：O2 动作卡片（2026-06-12，v4 选项板三选一）
+- **主入口 = 动作卡片**（剪映/CapCut/Resolve 起始页惯例），不再是一排同尺寸 pill：
+  - 主卡「新建空白项目」：280×88，`bg-nomi-ink text-nomi-paper rounded-nomi shadow-nomi-sm`，左 40px 圆形图标位（IconPlus），标题 14px/700 + 用途行「从一段文字或想法开始」（12px，paper 72% 派生色，封 token）
+  - 次卡「打开已有文件夹」：同尺寸，`bg-nomi-paper border-nomi-line`，IconFolderOpen + 用途行「把素材文件夹变成项目」
+  - **ActionCard 为新组件**：按设计系统 §9 协议登记后实现（通用 → `src/design/`）
+- 模型接入降为页头右上 28px 无边框弱文字钮（`text-nomi-ink-60`），与动作卡尺寸/形态/位置三重区隔
+- 搜索框右移，与「最近项目 + 筛选」同一行（左 section-head / 右 280px 搜索），纵向密度优于现状
 - 删除：Try Now hero（`ProjectLibraryPage.tsx:98-148`）、副标题、micro-note（`:192-195`）
 - 筛选 segmented 文案：`全部 N` / `本地新建 N` / `外部文件夹 N`（数据已有 `source: 'native'|'folder'`）
-- 顶栏「打开已有文件夹」与卡片「打开项目文件夹（reveal）」**必须不同 Tabler 图标**（IconFolderOpen vs IconFolderShare 类），卡片图标钮 hover 才显
-- 缺模型态：状态条（PanelCard 形态）标题「文本模型未接入」+「写故事、拆镜头都需要它；图片 / 视频模型可以等到生成前再接。」+ 实心「接入文本模型」。已知取舍：此时页面同屏两颗实心钮，分属「中断任务条 / 常驻页头」两区域（设计师 P0-2 的折中，开放项 ①）
+- 主卡/次卡/项目卡 reveal 钮三处图标互不相同（IconPlus / IconFolderOpen / 另选 reveal 图标），项目卡图标钮 hover 才显
+- 缺模型态：弱钮隐藏，状态条插在**动作卡下方**（PanelCard 形态）：「文本模型未接入」+「写故事、拆镜头都需要它；图片 / 视频模型可以等到生成前再接。」+ 实心「接入文本模型」——与动作卡形态尺度不同，无双主钮竞争（原开放项 ① 已随 O2 拍板消解）
 
 ### B 空库首启
 - hero 直接坐在 `--nomi-bg` 上，**无容器边框**（dashed 框 = 拖放区暗示，误导）
@@ -81,7 +87,7 @@ v2 经评审发现的洞（本版逐条修复）：
 
 ## 6. 开放项（实现前可不阻塞，列给用户知情）
 
-1. A2 同屏两颗实心钮的取舍（中断条 vs 页头）——如不接受，备选：缺模型时页头「新建空白项目」降为描边
+1. ~~A2 同屏两颗实心钮的取舍~~ —— 已随 O2 动作卡片拍板消解（主入口为卡片形态，状态条按钮不构成同形态竞争）
 2. tour 重看入口：appbar 常驻「?」 vs 并入设置（评审认为常驻 chrome 服务一次性功能偏重）
 3. 供应商 Key 指引文案的数据维护（各家免费额度会变，文案别写死具体额度数字）
 4. mockup 中 650/750 字重、28px 品牌字号等沿用现有页面实况；实现时以现有 `ProjectLibraryPage` 实际 token 为准，不新增非 token 值
