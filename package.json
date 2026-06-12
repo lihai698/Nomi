@@ -44,7 +44,8 @@
     "dist": "electron-builder",
     "dist:mac:dir": "electron-builder --mac dir --arm64",
     "postinstall": "node ./scripts/install-git-hooks.cjs",
-    "test:e2e": "node tests/ux/smoke.e2e.mjs"
+    "test:e2e": "node tests/ux/smoke.e2e.mjs",
+    "test:journeys": "node tests/ux/journeys.e2e.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^1.2.12",

@@ -25,15 +25,15 @@ export function realCatalogPath() {
   return path.join(os.homedir(), "Library", "Application Support", "Nomi", "model-catalog.json");
 }
 
-/** 建一套全新隔离环境并拷入真实 catalog(safeStorage 加密 key 同机可解)。 */
-export function prepareIsolation(isoDir) {
+/** 建一套全新隔离环境;requireCatalog=true 时拷入真实 catalog(safeStorage 加密 key 同机可解)。 */
+export function prepareIsolation(isoDir, { requireCatalog = true } = {}) {
   fs.rmSync(isoDir, { recursive: true, force: true });
   for (const d of ["settings", "projects", "chromium"]) fs.mkdirSync(path.join(isoDir, d), { recursive: true });
   const catalog = realCatalogPath();
-  if (!fs.existsSync(catalog)) {
+  if (requireCatalog && !fs.existsSync(catalog)) {
     throw new Error(`真实 model-catalog.json 不存在(${catalog})——被测 agent 需要已配置的模型与 key`);
   }
-  fs.copyFileSync(catalog, path.join(isoDir, "settings", "model-catalog.json"));
+  if (fs.existsSync(catalog)) fs.copyFileSync(catalog, path.join(isoDir, "settings", "model-catalog.json"));
   return {
     projectsDir: path.join(isoDir, "projects"),
     settingsDir: path.join(isoDir, "settings"),
