@@ -60,6 +60,8 @@ export type CanvasGraphActions = {
   moveNodeToGroup: (nodeId: string, groupId: string) => void
   removeNodeFromGroup: (nodeId: string) => void
   reorderGroup: (categoryId: string, activeGroupId: string, overGroupId: string) => void
+  /** S6-5 整笔撤销补偿:把删除步抹掉的节点/边按原 id 放回(upsert 幂等,已存在跳过)。 */
+  restoreGraph: (nodes: GenerationCanvasNode[], edges: GenerationCanvasEdge[]) => void
 }
 
 export type CanvasRunActions = {

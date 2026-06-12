@@ -41,7 +41,8 @@ export type AgentEventType =
   | "agent.gate.denied" //    { toolCallId, reason(人话) } —— intent 经 causeId→tool.proposed 还原
   // S6-2 提议事务回执(渲染层经 events bridge 入账,事件级 proposalId/txnId 同批画布事件)。
   | "agent.txn.committed" //  { proposalId, steps[{toolCallId,toolName}], clientIdToNodeId? } —— S6-3 加 reconciliation
-  | "agent.txn.aborted"; //   { proposalId, reason, failedToolCallId, failedIndex, stepCount, compensatedNodeIds } —— 中途失败补偿回滚,零半截(I3)
+  | "agent.txn.aborted" //    { proposalId, reason, failedToolCallId, failedIndex, stepCount, compensatedNodeIds } —— 中途失败补偿回滚,零半截(I3)
+  | "agent.txn.reverted"; //  { proposalId, ops } —— S6-5 整笔撤销(用户发起的补偿事务,source:user,期间用户工作保留)
 
 /** context 域 —— 投影:对话内"已不再记得最早 N 轮"提示 + C1 触发器观测。 */
 export type ContextEventType = "context.capped"; // { sessionKey, droppedCount, keptCount }

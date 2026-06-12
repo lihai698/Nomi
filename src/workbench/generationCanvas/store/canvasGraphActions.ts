@@ -356,4 +356,23 @@ export const createCanvasGraphActions: CanvasSliceCreator<CanvasGraphActions> = 
     // 纯排序变化无法用 upsert 表达 → 全量组数组后态(组对象很轻)
     emitCanvasGesture([{ type: 'canvas.groups.reordered', payload: { groups: get().groups } }])
   },
+  restoreGraph: (nodes, edges) => {
+    // S6-5 整笔撤销补偿:按原 id 放回被删节点/边。幂等:已存在的 id 跳过(不覆盖现状态)。
+    const existingNodeIds = new Set(get().nodes.map((node) => node.id))
+    const existingEdgeIds = new Set(get().edges.map((edge) => edge.id))
+    const addNodes = nodes.filter((node) => node?.id && !existingNodeIds.has(node.id))
+    const addEdges = edges.filter((edge) => edge?.id && !existingEdgeIds.has(edge.id))
+    if (!addNodes.length && !addEdges.length) return
+    pushUndoSnapshot(get())
+    set((state) => {
+      state.nodes = [...state.nodes, ...addNodes]
+      state.edges = [...state.edges, ...addEdges]
+      bumpPersistRevision(state)
+      Object.assign(state, getHistoryFlags())
+    })
+    emitCanvasGesture([
+      ...addNodes.map((node) => ({ type: 'canvas.node.added', payload: { node } })),
+      ...addEdges.map((edge) => ({ type: 'canvas.edge.added', payload: { edge } })),
+    ])
+  },
 })

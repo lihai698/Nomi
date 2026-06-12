@@ -4,7 +4,7 @@
 // 事务包裹在 applyCanvasToolCall 外面(它仍是工具→变更的单一真相源,§8.1b 不动项)。
 // 撤销粒度:整笔提议打一个 barrier(批准是一次用户意志,§6.2);abort 时拔掉事务内 barrier,
 // Cmd+Z 永远撤不出半截态。
-import { applyCanvasToolCall } from './applyCanvasToolCall'
+import { applyCanvasToolCall, resolveCanvasToolNodeId } from './applyCanvasToolCall'
 import { generationCanvasTools } from './generationCanvasTools'
 import { reconcileProposal, type ReconcileResult } from './reconcile'
 import { emitCanvasGesture } from '../events/canvasEventEmitter'
@@ -21,6 +21,16 @@ export type ProposalStep = {
   effectiveArgs: Record<string, unknown>
 }
 
+/** S6-5 整笔撤销的补偿计划:随事务逐步捕获,执行时倒序应用;对已消失目标全部容忍 no-op。 */
+export type CompensationOp =
+  | { kind: 'delete-nodes'; nodeIds: string[] }
+  | { kind: 'disconnect-edges'; pairs: { source: string; target: string }[] }
+  | { kind: 'restore-prompt'; nodeId: string; prompt: string }
+  | { kind: 'restore-graph'; nodes: unknown[]; edges: unknown[] }
+
+/** 编辑哨点:commit 时记下 AI 落地的节点状态,整笔撤销前对比——用户改过的要列明再丢。 */
+export type ProposalWatchNode = { nodeId: string; title: string; prompt: string }
+
 export type ProposalOutcome =
   | {
       status: 'committed'
@@ -29,6 +39,9 @@ export type ProposalOutcome =
       clientIdToNodeId: Record<string, string>
       /** S6-3 对账(N12):执行后态 vs 批准的 effectiveArgs 逐字段比对;I4=committed 必带它。 */
       reconciliation: ReconcileResult
+      /** S6-5 整笔撤销的米:补偿计划(按应用序,执行时倒序)+ 编辑哨点。 */
+      compensation: CompensationOp[]
+      watchNodes: ProposalWatchNode[]
     }
   | { status: 'aborted'; proposalId: string; failedIndex: number; reason: string; compensatedNodeIds: string[] }
 
@@ -57,17 +70,52 @@ export async function applyProposalBatch(steps: ProposalStep[]): Promise<Proposa
   const createdNodeIds: string[] = []
   const clientIdToNodeId: Record<string, string> = {}
   const results: unknown[] = []
+  // S6-5:边应用边攒补偿计划(undo 时倒序执行)。捕获必须在应用前后两侧完成——
+  // 删除步靠应用前快照(restore-graph),连接步靠前后边集差(disconnect)。
+  const compensation: CompensationOp[] = []
 
   for (let index = 0; index < steps.length; index += 1) {
     const step = steps[index]
     try {
+      const before = generationCanvasTools.read_canvas()
+      if (step.toolName === 'set_node_prompt') {
+        const nodeId = resolveCanvasToolNodeId(String(step.effectiveArgs.nodeId || '').trim())
+        const node = before.nodes.find((candidate) => candidate.id === nodeId)
+        if (node) compensation.push({ kind: 'restore-prompt', nodeId, prompt: node.prompt || '' })
+      }
+      if (step.toolName === 'delete_canvas_nodes') {
+        const targetIds = new Set(
+          (Array.isArray(step.effectiveArgs.nodeIds) ? step.effectiveArgs.nodeIds : [])
+            .map((raw) => resolveCanvasToolNodeId(String(raw || '').trim()))
+            .filter(Boolean),
+        )
+        const nodes = before.nodes.filter((node) => targetIds.has(node.id))
+        const edges = before.edges.filter((edge) => targetIds.has(edge.source) || targetIds.has(edge.target))
+        if (nodes.length) {
+          compensation.push({
+            kind: 'restore-graph',
+            nodes: JSON.parse(JSON.stringify(nodes)) as unknown[],
+            edges: JSON.parse(JSON.stringify(edges)) as unknown[],
+          })
+        }
+      }
       const result = await applyCanvasToolCall(step.toolName, step.effectiveArgs, ctx)
       if (step.toolName === 'create_canvas_nodes' && result && typeof result === 'object') {
         const record = result as { createdNodeIds?: unknown; clientIdToNodeId?: Record<string, string> }
         if (Array.isArray(record.createdNodeIds)) {
-          createdNodeIds.push(...record.createdNodeIds.filter((id): id is string => typeof id === 'string'))
+          const ids = record.createdNodeIds.filter((id): id is string => typeof id === 'string')
+          createdNodeIds.push(...ids)
+          if (ids.length) compensation.push({ kind: 'delete-nodes', nodeIds: ids })
         }
         Object.assign(clientIdToNodeId, record.clientIdToNodeId ?? {})
+      }
+      if (step.toolName === 'connect_canvas_edges') {
+        const had = new Set(before.edges.map((edge) => `${edge.source}→${edge.target}`))
+        const pairs = generationCanvasTools
+          .read_canvas()
+          .edges.filter((edge) => !had.has(`${edge.source}→${edge.target}`))
+          .map((edge) => ({ source: edge.source, target: edge.target }))
+        if (pairs.length) compensation.push({ kind: 'disconnect-edges', pairs })
       }
       results.push(result)
     } catch (error: unknown) {
@@ -129,5 +177,16 @@ export async function applyProposalBatch(steps: ProposalStep[]): Promise<Proposa
       },
     ]),
   )
-  return { status: 'committed', proposalId, results, clientIdToNodeId, reconciliation }
+  // 编辑哨点:AI 落地的节点此刻状态(创建的 + 改过 prompt 的);整笔撤销前对比,改过的列明再丢。
+  const watchIds = new Set<string>(createdNodeIds)
+  for (const step of steps) {
+    if (step.toolName === 'set_node_prompt') {
+      watchIds.add(resolveCanvasToolNodeId(String(step.effectiveArgs.nodeId || '').trim()))
+    }
+  }
+  const watchNodes: ProposalWatchNode[] = snapshot.nodes
+    .filter((node) => watchIds.has(node.id))
+    .map((node) => ({ nodeId: node.id, title: node.title, prompt: node.prompt || '' }))
+
+  return { status: 'committed', proposalId, results, clientIdToNodeId, reconciliation, compensation, watchNodes }
 }

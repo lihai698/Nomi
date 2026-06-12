@@ -1,0 +1,100 @@
+import React from 'react'
+import { IconChevronDown, IconChevronRight } from '@tabler/icons-react'
+import { cn } from '../../../utils/cn'
+import { WorkbenchButton } from '../../../design'
+import {
+  detectLostUserEdits,
+  runProposalUndo,
+  type CommittedProposalRecord,
+} from '../agent/proposalUndo'
+
+/**
+ * 已应用提议卡(S6-5):commit 后存活到下一笔提议或本会话结束(约束①)。
+ * 「查看步骤」= 最小轨迹视图(本笔事务的人话步骤+对账状态);
+ * 「整笔撤销」= 补偿事务回退本笔,期间用户工作保留;用户改过提议节点时先列明再丢(N13)。
+ */
+export default function CommittedProposalCard({ record, onUndone }: {
+  record: CommittedProposalRecord
+  onUndone?: () => void
+}): JSX.Element {
+  const [stepsOpen, setStepsOpen] = React.useState(false)
+  const [lostEdits, setLostEdits] = React.useState<string[] | null>(null)
+
+  const handleUndo = () => {
+    const lost = detectLostUserEdits(record)
+    if (lost.length && lostEdits === null) {
+      setLostEdits(lost) // 先列明将丢失的修改,等第二次确认
+      return
+    }
+    runProposalUndo(record)
+    onUndone?.()
+  }
+
+  return (
+    <div
+      className={cn('flex flex-col gap-2 p-3 rounded-nomi border border-nomi-line-soft bg-nomi-ink-05/60')}
+      data-committed-proposal-card={record.proposalId}
+    >
+      <div className={cn('flex items-center gap-2')}>
+        <span className={cn('text-caption text-nomi-ink-80')}>✓ 已应用：{record.summary}</span>
+        {!record.reconciliationOk ? (
+          <span className={cn('text-caption text-[var(--nomi-snap-tag)]')}>有出入</span>
+        ) : null}
+        <button
+          type='button'
+          className={cn(
+            'ml-auto inline-flex items-center gap-1 border-0 bg-transparent p-0 cursor-pointer',
+            'text-caption text-nomi-ink-60 hover:text-nomi-ink',
+          )}
+          onClick={() => setStepsOpen((open) => !open)}
+        >
+          {stepsOpen ? <IconChevronDown size={12} stroke={2} /> : <IconChevronRight size={12} stroke={2} />}
+          查看步骤
+        </button>
+        <WorkbenchButton
+          className={cn(
+            'h-6 px-2 rounded-nomi-sm border border-nomi-line bg-nomi-paper text-nomi-ink-80 text-caption cursor-pointer hover:bg-nomi-ink-05',
+          )}
+          data-proposal-undo-all='true'
+          onClick={handleUndo}
+        >
+          整笔撤销
+        </WorkbenchButton>
+      </div>
+      {stepsOpen ? (
+        <ol className={cn('flex flex-col gap-1 list-none p-0 m-0')}>
+          {record.stepLabels.map((label, index) => (
+            <li key={index} className={cn('text-caption text-nomi-ink-60')}>
+              {index + 1}. {label}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {lostEdits ? (
+        <div className={cn('flex flex-col gap-2 p-2 rounded-nomi-sm bg-nomi-paper border border-nomi-line')}>
+          <span className={cn('text-caption font-medium text-[var(--nomi-snap-tag)]')}>
+            撤销将一并丢失你 commit 后的修改：
+          </span>
+          {lostEdits.map((line, index) => (
+            <span key={index} className={cn('text-caption text-nomi-ink-80')}>· {line}</span>
+          ))}
+          <div className={cn('flex items-center justify-end gap-2')}>
+            <WorkbenchButton
+              className={cn('h-6 px-2 rounded-nomi-sm border border-nomi-line bg-nomi-paper text-nomi-ink-80 text-caption cursor-pointer hover:bg-nomi-ink-05')}
+              onClick={() => setLostEdits(null)}
+            >
+              取消
+            </WorkbenchButton>
+            <WorkbenchButton
+              className={cn('h-6 px-2 rounded-nomi-sm border-0 bg-nomi-ink text-nomi-paper text-caption cursor-pointer hover:bg-nomi-accent')}
+              data-proposal-undo-confirm='true'
+              onClick={handleUndo}
+            >
+              仍要撤销
+            </WorkbenchButton>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  )
+}

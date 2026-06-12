@@ -27,6 +27,9 @@ import {
 } from '../agent/fixationLauncher'
 import AgentPlanCard, { summarizeAgentPlan } from './AgentPlanCard'
 import ReconcileDeviationCard from './ReconcileDeviationCard'
+import CommittedProposalCard from './CommittedProposalCard'
+import { clearCommittedProposal, runProposalUndo, setCommittedProposal, useCommittedProposal } from '../agent/proposalUndo'
+import { toastAction } from '../../../ui/toastAction'
 import type { ReconcileDeviation } from '../agent/reconcile'
 import { useGenerationCanvasStore } from '../store/generationCanvasStore'
 import { AiReplyActionButton } from '../../ai/AiReplyActionButton'
@@ -108,6 +111,8 @@ export default function CanvasAssistantPanel({
   const [pendingToolCalls, setPendingToolCalls] = React.useState<PendingToolCall[]>([])
   // S6-3 对账偏差(N12):committed 但执行 ≠ 批准时弹卡;对账一致时恒 null(M1 零可见)。
   const [deviationReport, setDeviationReport] = React.useState<ReconcileDeviation[] | null>(null)
+  // S6-5:最近一笔已 commit 提议(整笔撤销/查看步骤入口;约束①存活到下一笔,③切项目清场)。
+  const committedProposal = useCommittedProposal()
   const threadBottomRef = React.useRef<HTMLDivElement | null>(null)
 
   // toolCallId → pending call 查找表(approveCalls 事务批要按序取多个 call,函数式 setState 取不到)。
@@ -255,6 +260,17 @@ export default function CanvasAssistantPanel({
           toolActionCount += steps.length
           // S6-3 对账(N12):执行 ≠ 批准 → 弹偏差卡(per-field diff+一键整笔撤销);一致则零可见。
           if (!outcome.reconciliation.ok) setDeviationReport(outcome.reconciliation.deviations)
+          // S6-5 整笔撤销:committed 卡(约束①,存活到下一笔)+ 画布 toast 第二入口(约束②)。
+          const record = {
+            proposalId: outcome.proposalId,
+            summary: steps.map((step) => summarizeToolCall(step.toolName, step.effectiveArgs)).join(' · '),
+            stepLabels: steps.map((step) => summarizeToolCall(step.toolName, step.effectiveArgs)),
+            compensation: outcome.compensation,
+            watchNodes: outcome.watchNodes,
+            reconciliationOk: outcome.reconciliation.ok,
+          }
+          setCommittedProposal(record)
+          toastAction(`AI 已应用：${record.summary}`, { label: '整笔撤销', onClick: () => runProposalUndo(record) })
           for (let index = 0; index < steps.length; index += 1) {
             const step = steps[index]
             await step.transport({
@@ -407,6 +423,8 @@ export default function CanvasAssistantPanel({
     pendingByIdRef.current.clear()
     setPendingToolCalls([])
     setDeviationReport(null)
+    clearCommittedProposal() // S6-5 约束③:清空对话后整笔撤销入口不再提供
+
     clearAttachments()
     resetConversation()
     // Wipe the shared backend memory so both areas start a fresh thread.
@@ -569,12 +587,16 @@ export default function CanvasAssistantPanel({
             </React.Fragment>
           ))
         )}
+        {committedProposal && !deviationReport ? (
+          <CommittedProposalCard record={committedProposal} />
+        ) : null}
         {deviationReport ? (
           <ReconcileDeviationCard
             deviations={deviationReport}
             onUndoAll={() => {
-              // S6-2 后整笔提议=一个 undo barrier:一次 undo 即整批回退。
-              useGenerationCanvasStore.getState().undo()
+              // 整笔撤销单机制(S6-5):补偿事务回退本笔,期间用户工作保留。
+              if (committedProposal) runProposalUndo(committedProposal)
+              else useGenerationCanvasStore.getState().undo()
               setDeviationReport(null)
             }}
             onDismiss={() => setDeviationReport(null)}
