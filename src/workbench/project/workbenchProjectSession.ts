@@ -8,7 +8,8 @@ export function readCurrentWorkbenchProjectPayload(): WorkbenchProjectPayload {
   return {
     workbenchDocument: workbench.workbenchDocument,
     timeline: workbench.timeline,
-    generationCanvas: generation.readSnapshot(),
+    // S5-b-0:持久化走 document 视图(选区是会话态不进项目文件)
+    generationCanvas: generation.readDocumentSnapshot(),
     categories: workbench.categories,
   }
 }

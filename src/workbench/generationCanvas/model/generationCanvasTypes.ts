@@ -173,6 +173,7 @@ export type GenerationCanvasEdgeMode =
 export type GenerationCanvasSnapshot = {
   nodes: GenerationCanvasNode[]
   edges: GenerationCanvasEdge[]
-  selectedNodeIds: string[]
+  /** S5-b-0:选区是会话态——工具视图(readSnapshot)带,持久化视图(readDocumentSnapshot)不带。 */
+  selectedNodeIds?: string[]
   groups: NodeGroup[]
 }

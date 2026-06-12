@@ -137,13 +137,13 @@ export function migrateGenerationCanvasSnapshot(
 
   const nextNodeIds = new Set(nextNodes.map((node) => node.id))
   const nextEdges = snapshot.edges.filter((edge) => nextNodeIds.has(edge.source) && nextNodeIds.has(edge.target))
-  const nextSelectedNodeIds = snapshot.selectedNodeIds.filter((nodeId) => nextNodeIds.has(nodeId))
+  const nextSelectedNodeIds = (snapshot.selectedNodeIds ?? []).filter((nodeId) => nextNodeIds.has(nodeId))
   const groupsNormalization = normalizeGroups((snapshot as { groups?: unknown }).groups, nextNodeIds)
   const nextGroups = groupsNormalization.groups
   const removedCount = snapshot.nodes.length - nextNodes.length
 
   if (!migratedCount && !removedCount && nextEdges.length === snapshot.edges.length &&
-    nextSelectedNodeIds.length === snapshot.selectedNodeIds.length && !groupsNormalization.changed) {
+    nextSelectedNodeIds.length === (snapshot.selectedNodeIds ?? []).length && !groupsNormalization.changed) {
     return { snapshot, migratedCount: 0, removedCount: 0, removedCategoryIds: [] }
   }
 

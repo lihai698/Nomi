@@ -1,8 +1,8 @@
-// 画布撤销/重做/剪贴板：模块级单例可变状态 + mutator API。从 generationCanvasStore.ts 抽出。
-// 原 store 直接读写 undoStack/redoStack/clipboard 三个模块变量；抽出后改为调用本文件的 API，
-// 语义逐字等价（HISTORY_LIMIT、slice 顺序、redo 清空时机、peek-then-mutate 均保持）。
+// 画布撤销/重做：模块级单例可变状态 + mutator API。
+// S5-b-0:剪贴板已迁 canvasClipboard.ts(评审 P1——本文件将随翻正删除,价值先迁走);
+// 本文件只剩历史栈职责,语义逐字等价(HISTORY_LIMIT、slice 顺序、redo 清空时机)。
 import type { GenerationCanvasEdge, GenerationCanvasNode, NodeGroup } from '../model/generationCanvasTypes'
-import { CLIPBOARD_OFFSET, createClipboardNodeId } from './canvasIds'
+import { __resetCanvasClipboardForTests } from './canvasClipboard'
 
 export type GenerationCanvasHistoryState = {
   nodes: GenerationCanvasNode[]
@@ -12,22 +12,15 @@ export type GenerationCanvasHistoryState = {
   pendingConnectionSourceId: string
 }
 
-export type GenerationCanvasClipboard = {
-  nodes: GenerationCanvasNode[]
-  edges: GenerationCanvasEdge[]
-}
-
 const HISTORY_LIMIT = 80
 
 let undoStack: GenerationCanvasHistoryState[] = []
 let redoStack: GenerationCanvasHistoryState[] = []
-let clipboard: GenerationCanvasClipboard | null = null
 
-export function getHistoryFlags(): { canUndo: boolean; canRedo: boolean; hasClipboard: boolean } {
+export function getHistoryFlags(): { canUndo: boolean; canRedo: boolean } {
   return {
     canUndo: undoStack.length > 0,
     canRedo: redoStack.length > 0,
-    hasClipboard: clipboard !== null,
   }
 }
 
@@ -63,70 +56,13 @@ export function popRedo(currentState: GenerationCanvasHistoryState): GenerationC
   return next
 }
 
-export function buildSelectedClipboard(
-  state: { selectedNodeIds: string[]; nodes: GenerationCanvasNode[]; edges: GenerationCanvasEdge[] },
-): GenerationCanvasClipboard | null {
-  const selected = new Set(state.selectedNodeIds)
-  if (!selected.size) return null
-  const nodes = state.nodes.filter((node) => selected.has(node.id))
-  if (!nodes.length) return null
-  return {
-    nodes,
-    edges: state.edges.filter((edge) => selected.has(edge.source) && selected.has(edge.target)),
-  }
-}
-
-export function cloneClipboardPayload(payload: GenerationCanvasClipboard): GenerationCanvasHistoryState {
-  const idMap = new Map<string, string>()
-  const nodes = payload.nodes.map((node) => {
-    const nextId = createClipboardNodeId(node.id)
-    idMap.set(node.id, nextId)
-    return {
-      ...node,
-      id: nextId,
-      title: node.title ? `${node.title} 副本` : node.title,
-      position: {
-        x: node.position.x + CLIPBOARD_OFFSET,
-        y: node.position.y + CLIPBOARD_OFFSET,
-      },
-    }
-  })
-  const edges = payload.edges.flatMap((edge) => {
-    const source = idMap.get(edge.source)
-    const target = idMap.get(edge.target)
-    if (!source || !target) return []
-    return [{
-      ...edge,
-      id: `edge-${source}-${target}`,
-      source,
-      target,
-    }]
-  })
-  return {
-    nodes,
-    edges,
-    groups: [],
-    selectedNodeIds: nodes.map((node) => node.id),
-    pendingConnectionSourceId: '',
-  }
-}
-
-export function setClipboard(payload: GenerationCanvasClipboard | null): void {
-  clipboard = payload
-}
-
-export function getClipboard(): GenerationCanvasClipboard | null {
-  return clipboard
-}
-
 export function clearHistory(): void {
   undoStack = []
   redoStack = []
-  clipboard = null
 }
 
 export function __resetGenerationCanvasHistoryForTests(): void {
   undoStack = []
   redoStack = []
-  clipboard = null
+  __resetCanvasClipboardForTests()
 }

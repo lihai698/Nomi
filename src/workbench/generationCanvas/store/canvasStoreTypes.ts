@@ -99,6 +99,8 @@ export type GenerationCanvasState = {
   undo: () => void
   redo: () => void
   readSnapshot: () => GenerationCanvasSnapshot
+  /** 持久化视图(S5-b-0):无 selectedNodeIds——选区是会话态不进项目文件。 */
+  readDocumentSnapshot: () => Omit<GenerationCanvasSnapshot, 'selectedNodeIds'>
   restoreSnapshot: (snapshot: unknown) => void
 } & CanvasNodeActions & CanvasGraphActions & CanvasRunActions
 

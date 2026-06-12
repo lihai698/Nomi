@@ -67,7 +67,8 @@ describe('generationCanvasStore snapshot normalization', () => {
     const state = useGenerationCanvasStore.getState()
     expect(state.nodes.map((candidate) => candidate.id)).toEqual(['image-1'])
     expect(state.edges).toEqual([])
-    expect(state.selectedNodeIds).toEqual(['image-1'])
+    // S5-b-0(session 摘除):重开项目不再恢复选区——选区是会话态不进项目文件
+    expect(state.selectedNodeIds).toEqual([])
     expect(state.groups.find((candidate) => candidate.id === 'shots-group')?.nodeIds).toEqual(['image-1'])
   })
 })
@@ -209,6 +210,10 @@ describe('generationCanvasStore sidebar grouping actions', () => {
       selectedNodeIds: ['cast-1', 'cast-2', 'shot-1'],
       groups: [group('cast-group', 'cast', ['cast-1'])],
     })
+    // S5-b-0:restoreSnapshot 不再恢复选区——按真实用户流显式选中再成组
+    useGenerationCanvasStore.getState().selectNode('cast-1')
+    useGenerationCanvasStore.getState().selectNode('cast-2', true)
+    useGenerationCanvasStore.getState().selectNode('shot-1', true)
 
     const created = useGenerationCanvasStore.getState().groupSelectedNodes('cast')
 

@@ -4,16 +4,19 @@ import { subscribeWithSelector } from 'zustand/middleware'
 import { removeNodes } from '../model/graphOps'
 import { bumpPersistRevision } from './canvasGuards'
 import {
-  buildSelectedClipboard,
   clearHistory,
-  cloneClipboardPayload,
-  getClipboard,
   getHistoryFlags,
   popRedo,
   popUndo,
   pushUndoSnapshot,
-  setClipboard,
 } from './canvasHistory'
+import {
+  buildSelectedClipboard,
+  clearClipboard,
+  cloneClipboardPayload,
+  getClipboard,
+  setClipboard,
+} from './canvasClipboard'
 import { normalizeStoreSnapshot, seedNodes } from './canvasSnapshotNormalizer'
 import { emitCanvasGesture } from '../events/canvasEventEmitter'
 import type { GenerationCanvasState } from './canvasStoreTypes'
@@ -66,7 +69,7 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
     const nextClipboard = buildSelectedClipboard(get())
     if (!nextClipboard) return
     setClipboard(nextClipboard)
-    set(getHistoryFlags())
+    set({ hasClipboard: true })
   },
   cutSelectedNodes: () => {
     const currentState = get()
@@ -81,7 +84,7 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
       state.edges = next.edges
       state.selectedNodeIds = []
       bumpPersistRevision(state)
-      Object.assign(state, getHistoryFlags())
+      Object.assign(state, getHistoryFlags(), { hasClipboard: true })
     })
     emitCanvasGesture(removedIds.map((nodeId) => ({ type: 'canvas.node.removed', payload: { nodeId } })))
   },
@@ -117,8 +120,10 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
       state.nodes = previous.nodes
       state.edges = previous.edges
       state.groups = previous.groups
-      state.selectedNodeIds = previous.selectedNodeIds
-      state.pendingConnectionSourceId = previous.pendingConnectionSourceId
+      // S5-b-0 session 摘除:撤销不回放选区(tldraw 教训)——保留当前选区,clamp 到仍存在的节点
+      const surviving = new Set(previous.nodes.map((node) => node.id))
+      state.selectedNodeIds = state.selectedNodeIds.filter((id) => surviving.has(id))
+      state.pendingConnectionSourceId = ''
       bumpPersistRevision(state)
       Object.assign(state, getHistoryFlags())
     })
@@ -133,14 +138,16 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
       state.nodes = next.nodes
       state.edges = next.edges
       state.groups = next.groups
-      state.selectedNodeIds = next.selectedNodeIds
-      state.pendingConnectionSourceId = next.pendingConnectionSourceId
+      const surviving = new Set(next.nodes.map((node) => node.id))
+      state.selectedNodeIds = state.selectedNodeIds.filter((id) => surviving.has(id))
+      state.pendingConnectionSourceId = ''
       bumpPersistRevision(state)
       Object.assign(state, getHistoryFlags())
     })
     emitCanvasGesture([{ type: 'canvas.snapshot.restored', payload: { snapshot: { nodes: next.nodes, edges: next.edges, groups: next.groups } } }])
   },
   readSnapshot: () => {
+    // 工具/会话视图(agent read_canvas 用,含选区)
     const state = get()
     return {
       nodes: state.nodes,
@@ -149,19 +156,31 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
       selectedNodeIds: state.selectedNodeIds,
     }
   },
+  readDocumentSnapshot: () => {
+    // 持久化视图(S5-b-0 session 摘除):选区是会话态,不进项目文件(tldraw document/session 分离)
+    const state = get()
+    return {
+      nodes: state.nodes,
+      edges: state.edges,
+      groups: state.groups,
+    }
+  },
   restoreSnapshot: (snapshot) => {
     const normalized = normalizeStoreSnapshot(snapshot)
     clearHistory()
+    clearClipboard()
     set({
       isReady: true,
       persistRevision: get().persistRevision,
       nodes: normalized.nodes,
       edges: normalized.edges,
       groups: normalized.groups,
-      selectedNodeIds: normalized.selectedNodeIds,
+      // S5-b-0:重开项目不再恢复幽灵选区(老 payload 里残存的 selectedNodeIds 忽略)
+      selectedNodeIds: [],
       pendingConnectionSourceId: '',
       canvasZoom: 1,
       canvasOffset: { x: 0, y: 0 },
+      hasClipboard: false,
       ...getHistoryFlags(),
     })
     // hydrate 即 genesis(影子期):之后的重放从这帧起步;S5-b 翻正后由 lastAppliedSeq 接管
