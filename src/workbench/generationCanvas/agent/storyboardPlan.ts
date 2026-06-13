@@ -1,3 +1,4 @@
+import { z } from 'zod'
 import type { GenerationCanvasEdgeMode } from '../model/generationCanvasTypes'
 
 /**
@@ -42,6 +43,47 @@ export type StoryboardPlan = {
   title: string
   anchors: PlanAnchor[]
   shots: PlanShot[]
+}
+
+// ── 校验 schema：planner 产出/落库前的运行时守卫（也是 S3 激活时交给 LLM 的工具参数 schema）──
+//
+// 与上方手写类型同形：手写类型带字段级 JSDoc（语义文档，z.infer 会丢），故两者并存；
+// 下方编译期守卫保证二者互相赋值兼容，防 schema 与类型漂移（P1 单一真相源的轻量落地）。
+
+export const planAnchorSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(['character', 'scene', 'prop', 'style']),
+  name: z.string().min(1),
+  description: z.string(),
+  carrier: z.enum(['visual', 'text']),
+  scope: z.enum(['all', 'selective']).optional(),
+})
+
+export const planShotSchema = z.object({
+  index: z.number().int(),
+  durationSec: z.number(),
+  anchorIds: z.array(z.string()),
+  prompt: z.string(),
+})
+
+export const storyboardPlanSchema = z.object({
+  title: z.string(),
+  anchors: z.array(planAnchorSchema),
+  shots: z.array(planShotSchema),
+})
+
+// 编译期漂移守卫：仅当 zod 推断类型 ⟺ 手写类型互相可赋值时才编译通过（零运行时）。
+const _planSchemaToType = (p: z.infer<typeof storyboardPlanSchema>): StoryboardPlan => p
+const _planTypeToSchema = (p: StoryboardPlan): z.infer<typeof storyboardPlanSchema> => p
+void _planSchemaToType
+void _planTypeToSchema
+
+/**
+ * 落库前校验方案对象。planner 产出经 backend zod 已过一道，渲染层再守一道——
+ * 防直接调用 / 未来别的入口绕过 backend 时灌入畸形对象（throw，调用方映射成 tool error）。
+ */
+export function parseStoryboardPlan(raw: unknown): StoryboardPlan {
+  return storyboardPlanSchema.parse(raw)
 }
 
 // ── 落画布转换器：StoryboardPlan → create_canvas_nodes 参数（纯函数，可单测）──

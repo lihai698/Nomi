@@ -28,6 +28,9 @@ type ToolMeta = { writes: boolean; destructive?: boolean; costy?: boolean }
 
 const TOOL_META: Record<string, ToolMeta> = {
   read_canvas_state: { writes: false },
+  // 产出分镜方案对象,只落创作 store 给用户审/改(不写画布投影、不花钱)——免费可改,直通放行(allow)。
+  // 真正花钱/写画布的是用户确认后由方案转出的 create_canvas_nodes + run_generation_batch。
+  propose_storyboard_plan: { writes: false },
   create_canvas_nodes: { writes: true },
   connect_canvas_edges: { writes: true },
   set_node_prompt: { writes: true },

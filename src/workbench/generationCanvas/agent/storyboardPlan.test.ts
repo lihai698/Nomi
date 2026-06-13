@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { storyboardPlanToCreateNodesArgs, type StoryboardPlan } from './storyboardPlan'
+import { parseStoryboardPlan, storyboardPlanToCreateNodesArgs, type StoryboardPlan } from './storyboardPlan'
 
 const PLAN: StoryboardPlan = {
   title: '雨夜追凶',
@@ -67,5 +67,21 @@ describe('storyboardPlanToCreateNodesArgs', () => {
   it('summary 取 title，空 title 兜底', () => {
     expect(storyboardPlanToCreateNodesArgs(PLAN).summary).toBe('雨夜追凶')
     expect(storyboardPlanToCreateNodesArgs({ title: '  ', anchors: [], shots: [] }).summary).toBe('分镜方案')
+  })
+})
+
+describe('parseStoryboardPlan（落库前运行时守卫）', () => {
+  it('合法方案对象原样解析', () => {
+    expect(parseStoryboardPlan(PLAN)).toEqual(PLAN)
+  })
+
+  it('锚类型非法 → throw（畸形对象不入 store）', () => {
+    const bad = { ...PLAN, anchors: [{ ...PLAN.anchors[0], kind: 'monster' }] }
+    expect(() => parseStoryboardPlan(bad)).toThrow()
+  })
+
+  it('缺必填字段（镜头无 prompt）→ throw', () => {
+    const bad = { title: 't', anchors: [], shots: [{ index: 1, durationSec: 5, anchorIds: [] }] }
+    expect(() => parseStoryboardPlan(bad)).toThrow()
   })
 })

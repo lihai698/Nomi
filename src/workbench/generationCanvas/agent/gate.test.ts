@@ -6,6 +6,12 @@ describe('evaluateGate — 统一求值流(§6.1)', () => {
     expect(evaluateGate({ kind: 'tool-call', toolName: 'read_canvas_state', args: {} })).toEqual({ outcome: 'allow' })
   })
 
+  it('① policy:propose_storyboard_plan 免费可改(不写画布/不花钱)→ allow', () => {
+    expect(evaluateGate({ kind: 'tool-call', toolName: 'propose_storyboard_plan', args: {} })).toEqual({
+      outcome: 'allow',
+    })
+  })
+
   it('③ ask:写工具排队等点头', () => {
     for (const toolName of ['create_canvas_nodes', 'connect_canvas_edges', 'set_node_prompt']) {
       expect(evaluateGate({ kind: 'tool-call', toolName, args: {} })).toEqual({ outcome: 'ask' })

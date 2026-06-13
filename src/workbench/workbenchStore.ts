@@ -17,6 +17,7 @@ import { createDefaultTimeline, normalizeTimeline } from './timeline/timelineMat
 import type { TimelineClip, TimelineState, TimelineTrackType } from './timeline/timelineTypes'
 import { createDefaultWorkbenchDocument, normalizeWorkbenchDocument, type CreationDocumentTools, type PreviewAspectRatio, type WorkbenchDocument } from './workbenchTypes'
 import type { WorkbenchAiMessage } from './ai/workbenchAiTypes'
+import type { StoryboardPlan } from './generationCanvas/agent/storyboardPlan'
 import type { ComposerAttachment } from './ai/composer/composerAttachmentTypes'
 import { createConversationBuckets } from './aiConversationBuckets'
 
@@ -80,6 +81,8 @@ type WorkbenchState = {
   creationAiMessages: WorkbenchAiMessage[]
   creationAiAttachments: ComposerAttachment[]
   creationAiError: string
+  /** 分镜方案对象（planner 产出，创作区审/改后确认落画布）。null=本项目暂无方案。切项目清空。 */
+  storyboardPlan: StoryboardPlan | null
   timeline: TimelineState
   timelinePlaying: boolean
   previewAspectRatio: PreviewAspectRatio
@@ -97,6 +100,8 @@ type WorkbenchState = {
   setCreationAiMessages: (messages: WorkbenchAiMessage[] | ((messages: WorkbenchAiMessage[]) => WorkbenchAiMessage[])) => void
   setCreationAiAttachments: (attachments: ComposerAttachment[] | ((attachments: ComposerAttachment[]) => ComposerAttachment[])) => void
   setCreationAiError: (error: string) => void
+  /** 写入/清空分镜方案对象（propose_storyboard_plan 落库、确认落画布后清）。 */
+  setStoryboardPlan: (plan: StoryboardPlan | null) => void
   /** 切项目时交换对话桶(S1 治串台):存旧项目的对话,载入新项目的(没有则空)。 */
   swapCreationAiProject: (prevId: string | null, nextId: string | null) => void
   /** 一次性信号：打开示例/新项目时请求创作助手默认展开（让「拆镜头」CTA 一眼可见），消费后清掉。 */
@@ -207,6 +212,7 @@ export const useWorkbenchStore = create<WorkbenchState>()(subscribeWithSelector(
   creationAiMessages: [],
   creationAiAttachments: [],
   creationAiError: '',
+  storyboardPlan: null,
   creationAssistantAutoOpen: false,
   timeline: createDefaultTimeline(),
   timelinePlaying: false,
@@ -249,6 +255,9 @@ export const useWorkbenchStore = create<WorkbenchState>()(subscribeWithSelector(
   setCreationAiError: (creationAiError) => {
     set({ creationAiError })
   },
+  setStoryboardPlan: (storyboardPlan) => {
+    set({ storyboardPlan })
+  },
   setCreationAssistantAutoOpen: (creationAssistantAutoOpen) => {
     set({ creationAssistantAutoOpen })
   },
@@ -257,14 +266,16 @@ export const useWorkbenchStore = create<WorkbenchState>()(subscribeWithSelector(
   },
   swapCreationAiProject: (prevId, nextId) => {
     const state = get()
-    set(
-      creationAiBuckets.swap(prevId, nextId, {
+    set({
+      ...creationAiBuckets.swap(prevId, nextId, {
         creationAiDraft: state.creationAiDraft,
         creationAiMessages: state.creationAiMessages,
         creationAiAttachments: state.creationAiAttachments,
         creationAiError: state.creationAiError,
       }),
-    )
+      // 方案是 per-project 工作产物,不入对话桶——切项目直接清,防跨项目串台(2026-06-10 走查教训)。
+      storyboardPlan: null,
+    })
   },
   setTimeline: (timeline) => {
     set((state) => ({

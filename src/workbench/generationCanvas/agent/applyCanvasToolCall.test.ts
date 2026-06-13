@@ -6,6 +6,8 @@ vi.mock('./availableModels', () => ({ listAvailableModelsForAgent: vi.fn(async (
 
 import { applyCanvasToolCall } from './applyCanvasToolCall'
 import { useGenerationCanvasStore } from '../store/generationCanvasStore'
+import { useWorkbenchStore } from '../../workbenchStore'
+import type { StoryboardPlan } from './storyboardPlan'
 
 function resetCanvas() {
   const state = useGenerationCanvasStore.getState()
@@ -97,5 +99,40 @@ describe('applyCanvasToolCall clientId 翻译', () => {
 
     const deleted = (await applyCanvasToolCall('delete_canvas_nodes', { nodeIds: ['n9'] })) as { deletedNodeIds: string[] }
     expect(deleted.deletedNodeIds).toEqual([realId])
+  })
+})
+
+// S2:propose_storyboard_plan 不碰画布——把结构化方案落创作 store 并切回创作区(规划免费可改)。
+describe('applyCanvasToolCall propose_storyboard_plan', () => {
+  const PLAN: StoryboardPlan = {
+    title: '雨夜追凶',
+    anchors: [{ id: 'a1', kind: 'character', name: '林夏', description: '红色校服', carrier: 'visual' }],
+    shots: [
+      { index: 1, durationSec: 5, anchorIds: ['a1'], prompt: '推镜' },
+      { index: 2, durationSec: 8, anchorIds: ['a1'], prompt: '跟拍' },
+    ],
+  }
+
+  beforeEach(() => {
+    resetCanvas()
+    useWorkbenchStore.getState().setStoryboardPlan(null)
+    useWorkbenchStore.getState().setWorkspaceMode('generation')
+  })
+
+  it('合法方案 → 落创作 store + 切回创作区 + 不动画布,回执含计数', async () => {
+    const ack = (await applyCanvasToolCall('propose_storyboard_plan', PLAN)) as string
+    const ws = useWorkbenchStore.getState()
+    expect(ws.storyboardPlan).toEqual(PLAN)
+    expect(ws.workspaceMode).toBe('creation')
+    expect(useGenerationCanvasStore.getState().nodes).toHaveLength(0) // 规划不碰画布
+    expect(ack).toContain('1 个锚')
+    expect(ack).toContain('2 个镜头')
+  })
+
+  it('畸形方案 → throw,不落 store(调用方映射成 tool error 回喂 LLM)', async () => {
+    await expect(
+      applyCanvasToolCall('propose_storyboard_plan', { title: 't', anchors: [{ id: 'x', kind: 'bad' }], shots: [] }),
+    ).rejects.toThrow()
+    expect(useWorkbenchStore.getState().storyboardPlan).toBeNull()
   })
 })

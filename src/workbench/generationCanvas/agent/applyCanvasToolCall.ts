@@ -9,6 +9,8 @@ import { formatCanvasForAgent } from './canvasPromptContext'
 import { buildDependencyWaves } from '../runner/dependencyWaves'
 import { runPlanWithToasts } from '../components/batchPlanPreview'
 import { arrangeStoryboardToTimeline } from './sendStoryboardToTimeline'
+import { parseStoryboardPlan } from './storyboardPlan'
+import { useWorkbenchStore } from '../../workbenchStore'
 
 // 批量创建节点的布局由渲染层 derive，而不是信任 LLM 发来的像素坐标。
 // 实现住在 trajectoryLayout（分层 + 避让 + 网格回退，步距由节点尺寸推导）。
@@ -81,6 +83,17 @@ export async function applyCanvasToolCall(toolName: string, args: unknown, gestu
     const selectedIds = new Set(snapshot.selectedNodeIds ?? [])
     const selected = snapshot.nodes.filter((node) => selectedIds.has(node.id))
     return formatCanvasForAgent(snapshot, selected)
+  }
+
+  if (toolName === 'propose_storyboard_plan') {
+    // 规划免费可改:planner 第一手产出结构化方案对象,落创作 store 给用户审/改——不碰画布、零网络、零扣费。
+    // 用户确认后才由 storyboardPlanToCreateNodesArgs 转成 create_canvas_nodes 落画布(S4)。
+    // 校验失败 throw → 调用方映射成 tool error,回喂 LLM 自我修正(与 gate deny 同语义)。
+    const plan = parseStoryboardPlan(record)
+    const store = useWorkbenchStore.getState()
+    store.setStoryboardPlan(plan)
+    store.setWorkspaceMode('creation')
+    return `已生成分镜方案「${plan.title || '未命名'}」：${plan.anchors.length} 个锚 · ${plan.shots.length} 个镜头，已放到创作区，待你审阅/修改后确认落画布。`
   }
 
   if (toolName === 'create_canvas_nodes') {
