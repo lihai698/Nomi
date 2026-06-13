@@ -1,7 +1,15 @@
 import React from 'react'
 import { cn } from '../../../utils/cn'
 import { WorkbenchButton } from '../../../design'
-import { summarizeAgentPlan, type AgentPlanSummary, type PlannedNode } from './agentPlanSummary'
+import {
+  isRelayEdge,
+  planNodeLayer,
+  summarizeAgentPlan,
+  type AgentPlanLayer,
+  type AgentPlanSummary,
+  type PlannedEdge,
+  type PlannedNode,
+} from './agentPlanSummary'
 import { listAvailableModelsForAgent, type AgentModelEntry } from '../agent/availableModels'
 
 export { summarizeAgentPlan }
@@ -15,6 +23,14 @@ type AgentPlanCardProps = {
   /** 时间线内嵌(方案三):去外框,导轨提供视觉结构;标题/计数由步骤头承担。 */
   flat?: boolean
 }
+
+const LAYER_LABEL: Record<AgentPlanLayer, string> = {
+  reference: '参考',
+  keyframe: '关键帧',
+  video: '视频',
+}
+
+const edgeKey = (edge: PlannedEdge): string => `${edge.sourceClientId}→${edge.targetClientId}`
 
 // 从计划节点 + 可用模型清单算出要展示的「模型/比例/清晰度」chip 文案。
 // 这些是 agent 配的、待用户过目的参数（簇 A「看全」）——modelKey 在则高亮「待你看」。
@@ -51,10 +67,95 @@ function PendingChip({ label, value }: { label?: string; value: string }): JSX.E
   )
 }
 
+/** 节点行（分组/平铺共用）：标题 + 引用 chip + prompt（默认一行预览，点行展开编辑）。 */
+function PlanNodeRow({
+  node,
+  index,
+  numbered,
+  refTitles,
+  chips,
+  prompt,
+  onPromptChange,
+}: {
+  node: PlannedNode
+  index: number
+  numbered: boolean
+  refTitles: string[]
+  chips: ReturnType<typeof nodeChipValues>
+  prompt: string
+  onPromptChange: (value: string) => void
+}): JSX.Element {
+  const [expanded, setExpanded] = React.useState(false)
+  return (
+    <li
+      className={cn('flex flex-col gap-[6px] p-2 rounded-nomi-sm bg-nomi-paper border border-nomi-line-soft')}
+      data-plan-node-id={node.clientId}
+    >
+      <button
+        type="button"
+        className={cn('flex items-center gap-2 min-w-0 border-0 bg-transparent p-0 text-left cursor-pointer')}
+        aria-expanded={expanded}
+        aria-label={`${node.title}（点击${expanded ? '收起' : '编辑'}提示词）`}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        {numbered ? (
+          <span className={cn(
+            'inline-grid place-items-center w-5 h-5 rounded-full bg-nomi-ink text-nomi-paper text-[11px] font-medium shrink-0',
+          )}>{index + 1}</span>
+        ) : null}
+        <span className={cn('text-nomi-ink text-[13px] font-medium truncate')}>{node.title}</span>
+        {refTitles.length > 0 ? (
+          <span className={cn('ml-auto inline-flex items-center gap-1 shrink-0')} data-plan-node-refs="true">
+            {refTitles.map((title) => (
+              <span
+                key={title}
+                className={cn('inline-flex items-center h-[18px] px-[7px] rounded-full bg-nomi-ink-05 text-nomi-ink-60 text-[10px] font-semibold')}
+              >
+                {title}
+              </span>
+            ))}
+          </span>
+        ) : null}
+      </button>
+
+      {chips ? (
+        <div className={cn('flex items-center gap-[6px] flex-wrap', numbered && 'pl-7')} data-plan-node-chips="true">
+          <PendingChip value={chips.modelLabel} />
+          {chips.aspect ? <PendingChip label="比例" value={chips.aspect} /> : null}
+          {chips.resolution ? <PendingChip label="清晰度" value={chips.resolution} /> : null}
+        </div>
+      ) : null}
+
+      {expanded ? (
+        <textarea
+          className={cn(
+            'w-full min-h-[46px] p-2 rounded-nomi-sm',
+            'border border-nomi-line-soft bg-nomi-paper text-nomi-ink-80 text-[12px] leading-[1.5] resize-y outline-0',
+            'hover:border-nomi-line focus:border-nomi-accent focus:text-nomi-ink',
+            numbered && 'ml-7 w-[calc(100%-1.75rem)]',
+          )}
+          aria-label={`编辑「${node.title}」的提示词`}
+          value={prompt}
+          autoFocus
+          onChange={(event) => onPromptChange(event.target.value)}
+        />
+      ) : (
+        <div
+          className={cn('text-nomi-ink-60 text-[12px] overflow-hidden text-ellipsis whitespace-nowrap', numbered && 'pl-7')}
+          aria-hidden="true"
+        >
+          {prompt}
+        </div>
+      )}
+    </li>
+  )
+}
+
 /**
  * Aggregated "plan" preview card (簇 A · 计划—批准—执行事务的 ①②态).
- * AI 把 create_canvas_nodes (+ optional connect) 折叠成一张可确认的卡:每个镜头展示
- * 模型/比例/清晰度(agent 配的,「待你看」高亮) + prompt 常驻可编辑,一键确认整批落地。
+ * T3 轨迹形态（定稿样张 2026-06-13-trajectory-plan-card.html）：≥2 层时按
+ * 参考/关键帧/视频 分组渲染 + 尾帧接力勾选行（取消即从批准里剔除该边）；
+ * 单层计划保持原编号平铺。一次「确认全部」原子批准。
  */
 export default function AgentPlanCard({ plan, approveCalls, rejectCall, flat = false }: AgentPlanCardProps): JSX.Element {
   const [editedPrompts, setEditedPrompts] = React.useState<Record<string, string>>(() => {
@@ -72,6 +173,47 @@ export default function AgentPlanCard({ plan, approveCalls, rejectCall, flat = f
     return () => { alive = false }
   }, [])
 
+  const nodeByClientId = React.useMemo(
+    () => new Map(plan.nodes.map((node) => [node.clientId, node])),
+    [plan.nodes],
+  )
+  const kindByClientId = React.useMemo(
+    () => new Map(plan.nodes.map((node) => [node.clientId, node.kind])),
+    [plan.nodes],
+  )
+  // 尾帧接力边（video→video first_frame）单独成区、可勾选；只针对 create 携带的边
+  // （批准时 overrides.edges 只能覆盖 create 调用的参数,遗留 connect 调用原样通过）。
+  const relayEdges = React.useMemo(
+    () => plan.createEdges.filter((edge) => isRelayEdge(edge, kindByClientId)),
+    [plan.createEdges, kindByClientId],
+  )
+  const [relayEnabled, setRelayEnabled] = React.useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {}
+    for (const edge of relayEdges) initial[edgeKey(edge)] = true
+    return initial
+  })
+
+  // ≥2 个不同层 → 轨迹分组形态；否则保持原编号平铺（单层拆镜不变量）。
+  const layers = plan.nodes.map(planNodeLayer)
+  const layered = !layers.includes(null) && new Set(layers).size >= 2
+  const groups: Array<{ layer: AgentPlanLayer; nodes: PlannedNode[] }> = layered
+    ? (['reference', 'keyframe', 'video'] as AgentPlanLayer[])
+        .map((layer) => ({ layer, nodes: plan.nodes.filter((node) => planNodeLayer(node) === layer) }))
+        .filter((group) => group.nodes.length > 0)
+    : []
+
+  // 节点行右上的引用 chip：进入该节点的参考类边的源节点标题（轨迹形态才展示）。
+  const refTitlesFor = React.useCallback((clientId: string): string[] => {
+    if (!layered) return []
+    return plan.edges
+      .filter((edge) => edge.targetClientId === clientId && edge.mode !== 'first_frame' && nodeByClientId.has(edge.sourceClientId))
+      .map((edge) => {
+        const title = nodeByClientId.get(edge.sourceClientId)?.title || edge.sourceClientId
+        // 「角色：男主」→「男主」——chip 空间小，留专名即可
+        return title.replace(/^(角色|场景|道具)[：:]\s*/, '').slice(0, 8)
+      })
+  }, [layered, plan.edges, nodeByClientId])
+
   const handleConfirmAll = React.useCallback(() => {
     const patchedNodes = plan.nodes.map((node) => ({
       clientId: node.clientId,
@@ -84,12 +226,23 @@ export default function AgentPlanCard({ plan, approveCalls, rejectCall, flat = f
       ...(node.modeId ? { modeId: node.modeId } : {}),
       ...(node.params ? { params: node.params } : {}),
     }))
+    // 被勾掉的接力边从批准里剔除（用户拍板：接力可选不强加）；其余边原样保留。
+    const keptEdges = plan.createEdges.filter(
+      (edge) => !isRelayEdge(edge, kindByClientId) || relayEnabled[edgeKey(edge)] !== false,
+    )
     // S6-2:create+connect 一笔事务批准——共一个 proposalId,connect 失败则 create 也回滚。
     approveCalls([
-      { toolCallId: plan.createCallId, overrides: { nodes: patchedNodes, summary: plan.summary } },
+      {
+        toolCallId: plan.createCallId,
+        overrides: {
+          nodes: patchedNodes,
+          summary: plan.summary,
+          ...(plan.createEdges.length ? { edges: keptEdges } : {}),
+        },
+      },
       ...(plan.connectCallId ? [{ toolCallId: plan.connectCallId }] : []),
     ])
-  }, [editedPrompts, plan, approveCalls])
+  }, [editedPrompts, plan, approveCalls, kindByClientId, relayEnabled])
 
   const handleRejectAll = React.useCallback(() => {
     rejectCall(plan.createCallId)
@@ -97,6 +250,19 @@ export default function AgentPlanCard({ plan, approveCalls, rejectCall, flat = f
       rejectCall(plan.connectCallId)
     }
   }, [plan, rejectCall])
+
+  const renderRow = (node: PlannedNode, index: number, numbered: boolean) => (
+    <PlanNodeRow
+      key={node.clientId}
+      node={node}
+      index={index}
+      numbered={numbered}
+      refTitles={refTitlesFor(node.clientId)}
+      chips={nodeChipValues(node, entryByKey)}
+      prompt={editedPrompts[node.clientId] ?? node.prompt}
+      onPromptChange={(value) => setEditedPrompts((current) => ({ ...current, [node.clientId]: value }))}
+    />
+  )
 
   return (
     <div
@@ -107,58 +273,64 @@ export default function AgentPlanCard({ plan, approveCalls, rejectCall, flat = f
       data-agent-plan-card="true"
       aria-label="Agent 故事板计划卡片"
     >
-      <div className={cn('flex flex-col gap-[2px]')}>
-        {flat ? null : (
-          <div className={cn('text-nomi-accent text-[11px] font-medium uppercase tracking-wider')}>
-            Agent 故事板计划
-          </div>
-        )}
-        {/* 时间线内嵌时步骤头已写「创建 N 个节点」,这里只留单行计数,不重复标题。 */}
-        {flat ? null : <div className={cn('text-nomi-ink text-[14px] font-medium leading-snug')}>{plan.summary}</div>}
-        <div className={cn('text-nomi-ink-60 text-[12px]')}>
-          {plan.nodes.length} 个节点 · {plan.edges.length} 条引用边 · <span className={cn('text-nomi-accent')}>蓝底 = AI 配的待你看</span>
-        </div>
-      </div>
+      {/* 定稿样张：头部只留一行摘要（计数在组头、蓝底 chip 可点自明，不再解释）。 */}
+      {flat ? null : <div className={cn('text-nomi-ink text-[14px] font-medium leading-snug')}>{plan.summary}</div>}
 
-      <ol className={cn('flex flex-col gap-2 list-none p-0 m-0')} aria-label="待确认的镜头列表">
-        {plan.nodes.map((node, index) => {
-          const currentPrompt = editedPrompts[node.clientId] ?? node.prompt
-          const chips = nodeChipValues(node, entryByKey)
-          return (
-            <li
-              key={node.clientId}
-              className={cn('flex flex-col gap-[6px] p-2 rounded-nomi-sm bg-nomi-paper border border-nomi-line-soft')}
-              data-plan-node-id={node.clientId}
-            >
-              <div className={cn('flex items-center gap-2 min-w-0')}>
-                <span className={cn(
-                  'inline-grid place-items-center w-5 h-5 rounded-full bg-nomi-ink text-nomi-paper text-[11px] font-medium shrink-0',
-                )}>{index + 1}</span>
-                <span className={cn('text-nomi-ink text-[13px] font-medium truncate')}>{node.title}</span>
+      {layered ? (
+        <div className={cn('flex flex-col gap-3')}>
+          {groups.map((group) => (
+            <section key={group.layer} className={cn('flex flex-col gap-[6px]')} data-plan-layer={group.layer}>
+              <div className={cn('text-nomi-ink-60 text-[11px] font-semibold')}>
+                {LAYER_LABEL[group.layer]} <span className={cn('text-nomi-ink-40 font-medium')}>×{group.nodes.length}</span>
               </div>
+              <ol className={cn('flex flex-col gap-2 list-none p-0 m-0')}>
+                {group.nodes.map((node, index) => renderRow(node, index, false))}
+              </ol>
+            </section>
+          ))}
 
-              {chips ? (
-                <div className={cn('flex items-center gap-[6px] flex-wrap pl-7')} data-plan-node-chips="true">
-                  <PendingChip value={chips.modelLabel} />
-                  {chips.aspect ? <PendingChip label="比例" value={chips.aspect} /> : null}
-                  {chips.resolution ? <PendingChip label="清晰度" value={chips.resolution} /> : null}
-                </div>
-              ) : null}
-
-              <textarea
-                className={cn(
-                  'ml-7 w-[calc(100%-1.75rem)] min-h-[46px] p-2 rounded-nomi-sm',
-                  'border border-nomi-line-soft bg-nomi-paper text-nomi-ink-80 text-[12px] leading-[1.5] resize-y outline-0',
-                  'hover:border-nomi-line focus:border-nomi-accent focus:text-nomi-ink',
-                )}
-                aria-label={`编辑第 ${index + 1} 个镜头的提示词`}
-                value={currentPrompt}
-                onChange={(event) => setEditedPrompts((current) => ({ ...current, [node.clientId]: event.target.value }))}
-              />
-            </li>
-          )
-        })}
-      </ol>
+          {relayEdges.length > 0 ? (
+            <section className={cn('flex flex-col gap-[6px]')} data-plan-layer="relay">
+              <div className={cn('text-nomi-ink-60 text-[11px] font-semibold')}>
+                尾帧接力 <span className={cn('text-nomi-ink-40 font-medium')}>可选</span>
+              </div>
+              {relayEdges.map((edge) => {
+                const key = edgeKey(edge)
+                const enabled = relayEnabled[key] !== false
+                const shortTitle = (clientId: string) =>
+                  (nodeByClientId.get(clientId)?.title || clientId).replace(/\s*视频.*$/, '')
+                return (
+                  <label
+                    key={key}
+                    className={cn('flex items-start gap-2 p-2 rounded-nomi-sm bg-nomi-paper border border-nomi-line-soft cursor-pointer')}
+                    data-plan-relay-edge={key}
+                  >
+                    <input
+                      type="checkbox"
+                      className={cn('mt-[2px] accent-[var(--nomi-accent)]')}
+                      checked={enabled}
+                      aria-label={`启用 ${shortTitle(edge.sourceClientId)} 到 ${shortTitle(edge.targetClientId)} 尾帧接力`}
+                      onChange={(event) => setRelayEnabled((current) => ({ ...current, [key]: event.target.checked }))}
+                    />
+                    <span className={cn('flex flex-col gap-[2px] min-w-0')}>
+                      <span className={cn('text-[12px] font-semibold', enabled ? 'text-nomi-ink' : 'text-nomi-ink-40 line-through')}>
+                        {shortTitle(edge.sourceClientId)} → {shortTitle(edge.targetClientId)}
+                      </span>
+                      <span className={cn('text-[11px] text-nomi-ink-40')}>
+                        {enabled ? '尾帧接首帧，动作顺接' : '已取消，独立生成'}
+                      </span>
+                    </span>
+                  </label>
+                )
+              })}
+            </section>
+          ) : null}
+        </div>
+      ) : (
+        <ol className={cn('flex flex-col gap-2 list-none p-0 m-0')} aria-label="待确认的镜头列表">
+          {plan.nodes.map((node, index) => renderRow(node, index, true))}
+        </ol>
+      )}
 
       <div className={cn('flex items-center justify-end gap-2')}>
         <WorkbenchButton
@@ -176,7 +348,7 @@ export default function AgentPlanCard({ plan, approveCalls, rejectCall, flat = f
           data-plan-confirm-all="true"
           onClick={handleConfirmAll}
         >
-          确认全部 ({plan.nodes.length} 节点)
+          确认全部
         </WorkbenchButton>
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { summarizeAgentPlan } from './generationCanvas/components/agentPlanSummary'
+import { summarizeAgentPlan, planNodeLayer, isRelayEdge } from './generationCanvas/components/agentPlanSummary'
 import {
   buildStoryboardPlanningMessage,
   STORYBOARD_PLANNER_SKILL,
@@ -142,6 +142,50 @@ describe('Phase C storyboard happy path', () => {
         },
       ])
       expect(plan!.edges).toEqual([{ sourceClientId: 'n1', targetClientId: 'n2' }])
+    })
+
+    it('exposes createEdges with mode + keeps relay edges separable (T3 分组数据)', () => {
+      const plan = summarizeAgentPlan([
+        {
+          toolCallId: 'c',
+          toolName: 'create_canvas_nodes',
+          args: {
+            nodes: [
+              { clientId: 'ref-c1', kind: 'character', title: '角色：男主', prompt: 'p' },
+              { clientId: 'kf1', kind: 'image', title: '镜头 1', prompt: 'p' },
+              { clientId: 'v1', kind: 'video', title: '镜头 1 视频', prompt: 'p' },
+              { clientId: 'v2', kind: 'video', title: '镜头 2 视频', prompt: 'p' },
+            ],
+            edges: [
+              { sourceClientId: 'ref-c1', targetClientId: 'kf1', mode: 'character_ref' },
+              { sourceClientId: 'kf1', targetClientId: 'v1', mode: 'first_frame' },
+              { sourceClientId: 'v1', targetClientId: 'v2', mode: 'first_frame' },
+            ],
+          },
+        },
+      ])
+      // createEdges 保留 mode，供计划卡分组/接力识别
+      expect(plan!.createEdges).toHaveLength(3)
+      expect(plan!.createEdges[0].mode).toBe('character_ref')
+    })
+  })
+
+  describe('planNodeLayer / isRelayEdge（T3 纯函数）', () => {
+    it('层由 kind 推导：character/scene→reference, image→keyframe, video→video', () => {
+      expect(planNodeLayer({ kind: 'character' })).toBe('reference')
+      expect(planNodeLayer({ kind: 'scene' })).toBe('reference')
+      expect(planNodeLayer({ kind: 'image' })).toBe('keyframe')
+      expect(planNodeLayer({ kind: 'video' })).toBe('video')
+      expect(planNodeLayer({ kind: 'text' })).toBeNull()
+    })
+
+    it('尾帧接力边 = video 源 + video 目标 + first_frame；其余非接力', () => {
+      const kinds = new Map([['v1', 'video'], ['v2', 'video'], ['kf1', 'image']])
+      expect(isRelayEdge({ sourceClientId: 'v1', targetClientId: 'v2', mode: 'first_frame' }, kinds)).toBe(true)
+      // 关键帧→视频的 first_frame 不是接力（源是 image）
+      expect(isRelayEdge({ sourceClientId: 'kf1', targetClientId: 'v1', mode: 'first_frame' }, kinds)).toBe(false)
+      // video→video 但非 first_frame 也不是接力
+      expect(isRelayEdge({ sourceClientId: 'v1', targetClientId: 'v2', mode: 'reference' }, kinds)).toBe(false)
     })
   })
 

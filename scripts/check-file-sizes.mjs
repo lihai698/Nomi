@@ -28,7 +28,7 @@ const ALLOWLIST = {
   "src/workbench/generationCanvas/nodes/scene3d/Scene3DFullscreen.tsx": 3860,
   "electron/runtime.ts": 743,
   "src/workbench/generationCanvas/nodes/BaseGenerationNode.tsx": 935,
-  "src/workbench/generationCanvas/components/GenerationCanvas.tsx": 991,
+  "src/workbench/generationCanvas/components/GenerationCanvas.tsx": 926,
   // generationCanvasStore.ts 曾 871 行（巨壳）；S5-0 按 zustand slice 模式拆出 canvasStoreTypes.ts +
   // canvasNodeActions.ts + canvasGraphActions.ts + canvasRunActions.ts 后壳文件缩到 161 < 800，已出白名单。
   // NodeParameterControls.tsx 曾 1097 行（巨壳）；C2b 抽出 controls/parameterControlModel.ts +

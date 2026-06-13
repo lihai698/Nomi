@@ -30,14 +30,38 @@ function sanitizeAgentParams(raw: Record<string, unknown>): Record<string, strin
 export type PlannedEdge = {
   sourceClientId: string
   targetClientId: string
+  /** T1 边语义（character_ref/style_ref/first_frame…），缺省=通用参考。 */
+  mode?: string
 }
 
 export type AgentPlanSummary = {
   summary: string
   nodes: PlannedNode[]
+  /** 全部边（create 携带 + 遗留 connect 调用合并去重）——展示用。 */
   edges: PlannedEdge[]
+  /** 仅 create 调用携带的边——批准时 overrides.edges 只允许覆盖这部分。 */
+  createEdges: PlannedEdge[]
   createCallId: string
   connectCallId: string | null
+}
+
+/** 轨迹层（T3 计划卡分组）：由 kind 纯函数推导，与 trajectoryLayout 同规则。 */
+export type AgentPlanLayer = 'reference' | 'keyframe' | 'video'
+
+export function planNodeLayer(node: Pick<PlannedNode, 'kind'>): AgentPlanLayer | null {
+  if (node.kind === 'character' || node.kind === 'scene') return 'reference'
+  if (node.kind === 'image') return 'keyframe'
+  if (node.kind === 'video') return 'video'
+  return null
+}
+
+/** 尾帧接力边：video 源 + video 目标 + first_frame 语义（计划卡单独勾选的付费行为）。 */
+export function isRelayEdge(edge: PlannedEdge, kindByClientId: ReadonlyMap<string, string>): boolean {
+  return (
+    edge.mode === 'first_frame' &&
+    kindByClientId.get(edge.sourceClientId) === 'video' &&
+    kindByClientId.get(edge.targetClientId) === 'video'
+  )
 }
 
 /**
@@ -81,12 +105,14 @@ export function summarizeAgentPlan(calls: readonly PendingToolCallLike[]): Agent
       .map((edge) => ({
         sourceClientId: String(edge.sourceClientId || edge.source || '').trim(),
         targetClientId: String(edge.targetClientId || edge.target || '').trim(),
+        ...(typeof edge.mode === 'string' && edge.mode ? { mode: edge.mode } : {}),
       }))
       .filter((edge) => edge.sourceClientId && edge.targetClientId)
 
   // 主路径：边随 create 一起提交（节点+边一个计划一次批准）；
   // 兼容旧轨迹/模型仍分轮发 connect 的情况，两处合并去重。
-  const edges: PlannedEdge[] = normalizeEdges(Array.isArray(createArgs.edges) ? createArgs.edges : [])
+  const createEdges: PlannedEdge[] = normalizeEdges(Array.isArray(createArgs.edges) ? createArgs.edges : [])
+  const edges: PlannedEdge[] = [...createEdges]
   const connectCall = calls.find((call) => call.toolName === 'connect_canvas_edges')
   if (connectCall) {
     const connectArgs = (connectCall.args && typeof connectCall.args === 'object')
@@ -106,6 +132,7 @@ export function summarizeAgentPlan(calls: readonly PendingToolCallLike[]): Agent
     summary,
     nodes,
     edges,
+    createEdges,
     createCallId: createCall.toolCallId,
     connectCallId: connectCall?.toolCallId ?? null,
   }
