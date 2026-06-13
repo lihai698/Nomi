@@ -215,7 +215,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
     activeEdgeId,
     selectNodesInRect,
   })
-  const { isPanning, isSpaceHeld, setViewportTransform, zoomAtStagePoint } = pointer
+  const { isPanning, isSpaceHeld, setViewportTransform, animateViewportTo, zoomAtStagePoint } = pointer
 
   React.useEffect(() => {
     const handleFocusNode = (event: Event) => {
@@ -253,7 +253,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
     if (targetCategoryId !== activeCategoryId) return
     const targetZoom = categoryViewports[targetCategoryId]?.zoom || zoomRef.current || 1
     const targetOffset = centerNodeOffset(target, stageSizeRef.current, targetZoom)
-    setViewportTransform(targetZoom, targetOffset)
+    animateViewportTo(targetZoom, targetOffset, 220) // 聚焦节点平滑滑入
     setFocusFlashNodeId(pendingFocusNodeId)
     setPendingFocusNodeId(null)
     if (focusFlashTimerRef.current !== null) window.clearTimeout(focusFlashTimerRef.current)
@@ -261,7 +261,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
       setFocusFlashNodeId((current) => (current === pendingFocusNodeId ? null : current))
       focusFlashTimerRef.current = null
     }, 1400)
-  }, [activeCategoryId, allNodes, categoryViewports, pendingFocusNodeId])
+  }, [activeCategoryId, allNodes, animateViewportTo, categoryViewports, pendingFocusNodeId])
 
   React.useEffect(() => {
     if (readOnly) return undefined
@@ -521,7 +521,8 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
     setContextNodeMenu(null)
   }
 
-  const fitView = React.useCallback(() => {
+  // animate=true：用户点「适应视图」按钮，平滑过渡；自动加载（useAutoFitOnLoad）传 false 即时定位，避免每次开项目都「飞入」。
+  const fitView = React.useCallback((animate = false) => {
     if (!nodes.length || !stageRef.current) return
     const rect = stageRef.current.getBoundingClientRect()
     const padding = 80
@@ -532,11 +533,13 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
     const contentW = maxX - minX + padding * 2
     const contentH = maxY - minY + padding * 2
     const nextZoom = Math.min(1.2, Math.min(rect.width / contentW, rect.height / contentH))
-    setViewportTransform(nextZoom, {
+    const nextOffset = {
       x: (rect.width - contentW * nextZoom) / 2 - (minX - padding) * nextZoom,
       y: (rect.height - contentH * nextZoom) / 2 - (minY - padding) * nextZoom,
-    })
-  }, [nodes, setViewportTransform])
+    }
+    if (animate) animateViewportTo(nextZoom, nextOffset, 200)
+    else setViewportTransform(nextZoom, nextOffset)
+  }, [animateViewportTo, nodes, setViewportTransform])
 
   // 项目/分类首次加载时自动适应视图（含「历史视口框不住任何节点」的自愈式适应，
   // 防止图都在视口外、用户误以为「图消失」）。逻辑抽到 useAutoFitOnLoad（防巨壳）。
@@ -762,11 +765,11 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
           )}
           aria-label="画布缩放"
         >
-          <WorkbenchButton aria-label="适应视图" title={nodes.length === 0 ? '画布为空' : '适应视图'} disabled={nodes.length === 0} onClick={fitView}>⌖</WorkbenchButton>
+          <WorkbenchButton aria-label="适应视图" title={nodes.length === 0 ? '画布为空' : '适应视图'} disabled={nodes.length === 0} onClick={() => fitView(true)}>⌖</WorkbenchButton>
           <WorkbenchButton
             aria-label="重置视图"
             title="重置视图"
-            onClick={() => setViewportTransform(1, { x: 0, y: 0 })}
+            onClick={() => animateViewportTo(1, { x: 0, y: 0 }, 200)}
           >▦</WorkbenchButton>
           <input
             className="w-[78px] accent-workbench-accent"

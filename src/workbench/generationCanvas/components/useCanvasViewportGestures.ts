@@ -36,6 +36,7 @@ export type CanvasViewportGestures = {
   isSpaceHeld: boolean
   scheduleOffset: (offset: Offset) => void
   setViewportTransform: (zoom: number, offset: Offset) => void
+  animateViewportTo: (zoom: number, offset: Offset, duration?: number) => void
   zoomAtStagePoint: (zoom: number, point: { x: number; y: number }) => void
   handlePointerDownCapture: (event: React.PointerEvent<HTMLDivElement>) => void
   handlePointerDown: (event: React.PointerEvent<HTMLDivElement>) => void
@@ -61,6 +62,7 @@ export function useCanvasViewportGestures({
 }: UseCanvasViewportGesturesArgs): CanvasViewportGestures {
   const offsetFrameRef = React.useRef<number | null>(null)
   const pendingOffsetRef = React.useRef<Offset | null>(null)
+  const animFrameRef = React.useRef<number | null>(null)
   const isPanningRef = React.useRef(false)
   const panStartRef = React.useRef<{ clientX: number; clientY: number; offsetX: number; offsetY: number; button: number; moved: boolean } | null>(null)
   const suppressContextMenuRef = React.useRef(false)
@@ -68,7 +70,15 @@ export function useCanvasViewportGestures({
   const [isPanning, setIsPanning] = React.useState(false)
   const [isSpaceHeld, setIsSpaceHeld] = React.useState(false)
 
+  const cancelAnim = React.useCallback(() => {
+    if (animFrameRef.current !== null) {
+      window.cancelAnimationFrame(animFrameRef.current)
+      animFrameRef.current = null
+    }
+  }, [])
+
   const scheduleOffset = React.useCallback((nextOffset: Offset) => {
+    cancelAnim() // 任何手动平移立即接管，打断进行中的动画
     offsetRef.current = nextOffset
     pendingOffsetRef.current = nextOffset
     if (offsetFrameRef.current !== null) return
@@ -78,9 +88,10 @@ export function useCanvasViewportGestures({
       pendingOffsetRef.current = null
       if (pending) setViewport((current) => ({ ...current, offset: pending }))
     })
-  }, [offsetRef, setViewport])
+  }, [cancelAnim, offsetRef, setViewport])
 
   const setViewportTransform = React.useCallback((nextZoom: number, nextOffset: Offset) => {
+    cancelAnim()
     if (offsetFrameRef.current !== null) {
       window.cancelAnimationFrame(offsetFrameRef.current)
       offsetFrameRef.current = null
@@ -89,7 +100,37 @@ export function useCanvasViewportGestures({
     zoomRef.current = nextZoom
     offsetRef.current = nextOffset
     setViewport({ zoom: nextZoom, offset: nextOffset })
-  }, [offsetRef, setViewport, zoomRef])
+  }, [cancelAnim, offsetRef, setViewport, zoomRef])
+
+  // 离散跳转（适应视图 / 重置 / 聚焦节点）的平滑过渡：rAF 在 ~140ms（--nomi-transition-fast）
+  // 内 easeOutCubic 插值 zoom+offset。连续控件（缩放条/捏合）不走这里，保持即时跟手。
+  const animateViewportTo = React.useCallback((targetZoom: number, targetOffset: Offset, duration = 140) => {
+    cancelAnim()
+    if (offsetFrameRef.current !== null) {
+      window.cancelAnimationFrame(offsetFrameRef.current)
+      offsetFrameRef.current = null
+    }
+    pendingOffsetRef.current = null
+    const startZoom = zoomRef.current || 1
+    const startOffset = { ...offsetRef.current }
+    let startTs: number | null = null
+    const ease = (t: number) => 1 - Math.pow(1 - t, 3)
+    const step = (ts: number) => {
+      if (startTs === null) startTs = ts
+      const progress = duration <= 0 ? 1 : Math.min(1, (ts - startTs) / duration)
+      const e = ease(progress)
+      const zoom = startZoom + (targetZoom - startZoom) * e
+      const offset = {
+        x: startOffset.x + (targetOffset.x - startOffset.x) * e,
+        y: startOffset.y + (targetOffset.y - startOffset.y) * e,
+      }
+      zoomRef.current = zoom
+      offsetRef.current = offset
+      setViewport({ zoom, offset })
+      animFrameRef.current = progress < 1 ? window.requestAnimationFrame(step) : null
+    }
+    animFrameRef.current = window.requestAnimationFrame(step)
+  }, [cancelAnim, offsetRef, setViewport, zoomRef])
 
   const zoomAtStagePoint = React.useCallback((nextZoom: number, point: { x: number; y: number }) => {
     const currentZoom = zoomRef.current || 1
@@ -105,6 +146,10 @@ export function useCanvasViewportGestures({
     if (offsetFrameRef.current !== null) {
       window.cancelAnimationFrame(offsetFrameRef.current)
       offsetFrameRef.current = null
+    }
+    if (animFrameRef.current !== null) {
+      window.cancelAnimationFrame(animFrameRef.current)
+      animFrameRef.current = null
     }
   }, [])
 
@@ -278,6 +323,7 @@ export function useCanvasViewportGestures({
     isSpaceHeld,
     scheduleOffset,
     setViewportTransform,
+    animateViewportTo,
     zoomAtStagePoint,
     handlePointerDownCapture,
     handlePointerDown,

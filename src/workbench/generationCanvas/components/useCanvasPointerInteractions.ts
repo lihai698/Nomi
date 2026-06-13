@@ -30,6 +30,7 @@ export type CanvasPointerInteractions = {
   isSpaceHeld: boolean
   marqueeRect: MarqueeRect | null
   setViewportTransform: (zoom: number, offset: Offset) => void
+  animateViewportTo: (zoom: number, offset: Offset, duration?: number) => void
   zoomAtStagePoint: (zoom: number, point: { x: number; y: number }) => void
   shouldSuppressContextMenu: () => boolean
   onPointerDownCapture: (event: React.PointerEvent<HTMLDivElement>) => void
@@ -81,6 +82,7 @@ export function useCanvasPointerInteractions(args: Args): CanvasPointerInteracti
     isSpaceHeld: gestures.isSpaceHeld,
     marqueeRect: marquee.marqueeRect,
     setViewportTransform: gestures.setViewportTransform,
+    animateViewportTo: gestures.animateViewportTo,
     zoomAtStagePoint: gestures.zoomAtStagePoint,
     shouldSuppressContextMenu: gestures.shouldSuppressContextMenu,
     onPointerDownCapture: gestures.handlePointerDownCapture,
