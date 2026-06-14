@@ -27,8 +27,13 @@ describe("selectTaskMapping — 优先级：精确 modelKey > generic > 任意",
   it("只有 generic 时，任何 modelKey 都落它（向后兼容老数据：Seedance 无 modelKey 仍可用）", () => {
     expect(selectTaskMapping([kling], "kie", "text_to_video", "anything")?.id).toBe("kling");
   });
-  it("没有 generic、只有别的模型绑定 → 兜底返回桶内任意 enabled（不至于 null）", () => {
-    expect(selectTaskMapping([happy], "kie", "text_to_video", "other")?.id).toBe("happy");
+  it("没有 generic、只有别的模型绑定、且 modelKey 不匹配 → 返回 null（P3:不静默套别的模型模板）", () => {
+    // 旧行为是兜底 inBucket[0]，会把「other」静默套上 happyhorse 的请求模板。
+    // 根因修复：无精确绑定 + 无 generic → null，让调用方走通用回退而非错模板。
+    expect(selectTaskMapping([happy], "kie", "text_to_video", "other")).toBeNull();
+  });
+  it("没有 generic、不传 modelKey、桶里只有带 modelKey 的绑定 → 仍返回 null（不靠数组序乱选）", () => {
+    expect(selectTaskMapping([happy], "kie", "text_to_video")).toBeNull();
   });
   it("禁用的不选；空桶返回 null", () => {
     expect(selectTaskMapping([mp("off", { enabled: false })], "kie", "text_to_video")).toBeNull();

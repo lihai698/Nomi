@@ -90,6 +90,35 @@ describe("fingerprintCache — S8 指纹缓存", () => {
     expect(readCachedTaskResult({ projectId: "p1", fingerprint: "fp-abc" })?.id).toBe("task-2");
   });
 
+  it("跨节点命中复用资产，但不连带泄漏别节点的 vendorRequestId（标注 fromCache + 留源 runId）", () => {
+    // 节点 A 真调 vendor，产物带它自己的 vendorRequestId。
+    const fromNodeA = {
+      ...result("task-A"),
+      provenance: { provider: "kie", vendorRequestId: "vendor-req-A", timestamp: 1 },
+    };
+    rememberTaskResult("p1", "fp-shared", fromNodeA);
+    // 节点 B 同配方 → 命中 A 的资产（零 vendor 调用，这是缓存的价值，要保留）。
+    const hitForB = readCachedTaskResult({ projectId: "p1", fingerprint: "fp-shared", nodeId: "nB" });
+    expect(hitForB?.assets).toHaveLength(1); // 资产照样复用
+    const prov = hitForB?.provenance as Record<string, unknown> | undefined;
+    // 关键：B 的 provenance 不能再声称自己发过 vendor-req-A（那是 A 的请求）。
+    expect(prov?.vendorRequestId).toBeUndefined();
+    expect(prov?.fromCache).toBe(true);
+    // 审计仍可追到原始来源（诚实：复用自哪次成功 run），但不冒充本节点的 vendor 请求。
+    expect(prov?.cacheSourceRunId).toBe("task-A");
+    // 缓存里的原始记录不被命中读取就地改坏（深拷贝隔离）。
+    const prov2 = readCachedTaskResult({ projectId: "p1", fingerprint: "fp-shared", nodeId: "nC" })?.provenance as Record<string, unknown> | undefined;
+    expect(prov2?.fromCache).toBe(true);
+    expect(prov2?.vendorRequestId).toBeUndefined();
+  });
+
+  it("命中结果无 provenance 时不凭空造（只在有 provenance 时标注 fromCache）", () => {
+    rememberTaskResult("p1", "fp-noprov", result("task-NP"));
+    const hit = readCachedTaskResult({ projectId: "p1", fingerprint: "fp-noprov", nodeId: "nX" });
+    expect(hit?.assets).toHaveLength(1);
+    expect(hit?.provenance).toBeUndefined();
+  });
+
   it("失败/无产物/无 projectId 不入不读(跨项目命中会引用别人项目的文件)", () => {
     rememberTaskResult("p1", "fp-1", { ...result(), status: "failed" });
     rememberTaskResult("p1", "fp-2", { ...result(), assets: [] });

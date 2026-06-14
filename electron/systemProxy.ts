@@ -33,8 +33,33 @@ export type ProxyResolution =
 
 const LOG = "[nomi:proxy]";
 
-/** 当前生效代理的人类可读标签（供 describeNetworkError 的诊断提示用）；无代理为 null。 */
+/** 当前生效代理的人类可读标签（供 describeNetworkError 的诊断提示用）；无代理/未生效为 null。 */
 let activeProxyLabel: string | null = null;
+/**
+ * 探到「检测到了代理、但本版不支持」（SOCKS-only / 未知协议）时的人话详情。
+ * 与 activeProxyLabel 互斥：unsupported 时按直连跑，但用户其实**开了**代理——诊断必须如实说
+ * 「检测到 SOCKS 但本版不支持，请改用 HTTP 代理」，绝不误说「当前未启用代理」（P2·别误导）。
+ */
+let unsupportedProxyDetail: string | null = null;
+
+/**
+ * 把一次探测结果记进模块级诊断状态（唯一写入口；applySystemProxy 与测试都经它，避免两份真相源）。
+ *  - http       → 记生效标签，清 unsupported。
+ *  - unsupported → 记 unsupported 详情，清生效标签（按直连跑但用户开了代理）。
+ *  - none        → 两者皆清（确无代理）。
+ */
+function rememberProxyState(resolution: ProxyResolution): void {
+  if (resolution.kind === "http") {
+    activeProxyLabel = `${resolution.url}（来源：${resolution.source === "env" ? "环境变量" : "系统设置"}）`;
+    unsupportedProxyDetail = null;
+  } else if (resolution.kind === "unsupported") {
+    activeProxyLabel = null;
+    unsupportedProxyDetail = `${resolution.detail}，来源：${resolution.source === "env" ? "环境变量" : "系统设置"}`;
+  } else {
+    activeProxyLabel = null;
+    unsupportedProxyDetail = null;
+  }
+}
 
 /**
  * 把一个原始代理串规范成 ProxyResolution。
@@ -184,15 +209,17 @@ export class SelectiveProxyDispatcher extends Dispatcher {
 export async function applySystemProxy(session: Session): Promise<ProxyResolution> {
   try {
     const resolution = await resolveProxy(session);
+    rememberProxyState(resolution);
     if (resolution.kind === "http") {
       const direct = getGlobalDispatcher();
       const proxy = new ProxyAgent(resolution.url);
       setGlobalDispatcher(new SelectiveProxyDispatcher(proxy, direct));
-      activeProxyLabel = `${resolution.url}（来源：${resolution.source === "env" ? "环境变量" : "系统设置"}）`;
       console.log(`${LOG} 已启用代理 ${activeProxyLabel}；本地/私网地址直连`);
     } else if (resolution.kind === "unsupported") {
+      // 按直连跑，但记下 unsupported 详情 → describeNetworkError 会如实告知用户「检测到
+      // SOCKS 但本版不支持，请改用 HTTP 代理」，而非误说「未启用代理」。
       console.warn(
-        `${LOG} 探测到${resolution.detail}，Phase 1 暂不支持；请改用 HTTP 代理端口。当前按直连处理。`,
+        `${LOG} 探测到${resolution.detail}，本版暂不支持；请改用 HTTP 代理端口。当前按直连处理。`,
       );
     } else {
       console.log(`${LOG} 未探测到代理，按直连处理`);
@@ -211,7 +238,9 @@ export async function applySystemProxy(session: Session): Promise<ProxyResolutio
 export function describeNetworkError(error: unknown): string {
   const proxyHint = activeProxyLabel
     ? `（当前代理：${activeProxyLabel}）`
-    : "（当前未启用代理；若该地址需科学上网，请开启系统代理后重启应用）";
+    : unsupportedProxyDetail
+      ? `（检测到 ${unsupportedProxyDetail}，但本版仅支持 HTTP 代理，已按直连处理；请在系统/Clash 里改用 HTTP 代理端口后重启应用）`
+      : "（当前未启用代理；若该地址需科学上网，请开启系统代理后重启应用）";
 
   if (error instanceof Error && error.name === "AbortError") {
     return `请求超时：12 秒内未响应。可能网络不通，或该地址需要代理才能访问。${proxyHint}`;
@@ -259,4 +288,18 @@ function extractErrorCode(error: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+/**
+ * 测试钩子：直接喂一个 ProxyResolution 进诊断状态，免去真起 Electron Session 探测。
+ * 仅测试用——走的是与 applySystemProxy 同一个 rememberProxyState 写入口（单一真相源）。
+ */
+export function rememberProxyStateForTests(resolution: ProxyResolution): void {
+  rememberProxyState(resolution);
+}
+
+/** 测试钩子：清空模块级代理诊断状态（生效标签 + unsupported 详情）。 */
+export function resetProxyStateForTests(): void {
+  activeProxyLabel = null;
+  unsupportedProxyDetail = null;
 }

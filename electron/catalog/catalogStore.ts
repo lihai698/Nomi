@@ -347,8 +347,12 @@ export function getModelCatalogHealth(): unknown {
   };
 }
 
-export function upsertModelCatalogVendor(payload: unknown): Vendor {
-  const state = readCatalog();
+/**
+ * 纯函数:把一次 vendor upsert 应用到**内存中的** state(原地改 state.vendors),返回产出的 vendor。
+ * 不读盘不写盘——读盘/写盘归调用方。事务化导入(importModelCatalogPackage)与单条公开 upsert
+ * 共用它,避免两份合并逻辑漂移(P1)。
+ */
+function applyVendorUpsert(state: CatalogState, payload: unknown): Vendor {
   const raw = payload as JsonRecord;
   const key = sanitizeName(raw.key, "").toLowerCase().replace(/\s+/g, "-");
   if (!key) throw new Error("vendor key is required");
@@ -369,8 +373,14 @@ export function upsertModelCatalogVendor(payload: unknown): Vendor {
     updatedAt: t,
   };
   state.vendors = [vendor, ...state.vendors.filter((item) => item.key !== key)];
+  return vendor;
+}
+
+export function upsertModelCatalogVendor(payload: unknown): Vendor {
+  const state = readCatalog();
+  const vendor = applyVendorUpsert(state, payload);
   writeCatalog(state);
-  return { ...vendor, hasApiKey: Boolean(state.apiKeysByVendor[key]?.apiKey) };
+  return { ...vendor, hasApiKey: Boolean(state.apiKeysByVendor[vendor.key]?.apiKey) };
 }
 
 export function deleteModelCatalogVendor(key: string): void {
@@ -382,8 +392,8 @@ export function deleteModelCatalogVendor(key: string): void {
   writeCatalog(state);
 }
 
-export function upsertModelCatalogVendorApiKey(vendorKey: string, payload: unknown): unknown {
-  const state = readCatalog();
+/** 纯函数:把一次 apiKey upsert 应用到内存 state(原地改 state.apiKeysByVendor)。见 applyVendorUpsert 同理。 */
+function applyApiKeyUpsert(state: CatalogState, vendorKey: string, payload: unknown): void {
   const key = String(vendorKey || "").trim();
   const apiKey = String((payload as JsonRecord)?.apiKey || "").trim();
   if (!key) throw new Error("vendor key is required");
@@ -397,8 +407,15 @@ export function upsertModelCatalogVendorApiKey(vendorKey: string, payload: unkno
     existing?.createdAt || t,
     t,
   );
+}
+
+export function upsertModelCatalogVendorApiKey(vendorKey: string, payload: unknown): unknown {
+  const state = readCatalog();
+  applyApiKeyUpsert(state, vendorKey, payload);
   writeCatalog(state);
-  return { vendorKey: key, hasApiKey: true, enabled: state.apiKeysByVendor[key].enabled, createdAt: state.apiKeysByVendor[key].createdAt, updatedAt: t };
+  const key = String(vendorKey || "").trim();
+  const rec = state.apiKeysByVendor[key];
+  return { vendorKey: key, hasApiKey: true, enabled: rec.enabled, createdAt: rec.createdAt, updatedAt: rec.updatedAt };
 }
 
 export function clearModelCatalogVendorApiKey(vendorKey: string): unknown {
@@ -410,8 +427,8 @@ export function clearModelCatalogVendorApiKey(vendorKey: string): unknown {
   return { vendorKey: key, hasApiKey: false, enabled: false, createdAt: t, updatedAt: t };
 }
 
-export function upsertModelCatalogModel(payload: unknown): Model {
-  const state = readCatalog();
+/** 纯函数:把一次 model upsert 应用到内存 state(原地改 state.models)。见 applyVendorUpsert 同理。 */
+function applyModelUpsert(state: CatalogState, payload: unknown): Model {
   const raw = payload as JsonRecord;
   const modelKey = String(raw.modelKey || "").trim();
   const vendorKey = String(raw.vendorKey || "").trim();
@@ -433,6 +450,12 @@ export function upsertModelCatalogModel(payload: unknown): Model {
     updatedAt: t,
   };
   state.models = [model, ...state.models.filter((item) => !(item.vendorKey === vendorKey && item.modelKey === modelKey))];
+  return model;
+}
+
+export function upsertModelCatalogModel(payload: unknown): Model {
+  const state = readCatalog();
+  const model = applyModelUpsert(state, payload);
   writeCatalog(state);
   return model;
 }
@@ -443,8 +466,8 @@ export function deleteModelCatalogModel(vendorKey: string, modelKey: string): vo
   writeCatalog(state);
 }
 
-export function upsertModelCatalogMapping(payload: unknown): Mapping {
-  const state = readCatalog();
+/** 纯函数:把一次 mapping upsert 应用到内存 state(原地改 state.mappings)。见 applyVendorUpsert 同理。 */
+function applyMappingUpsert(state: CatalogState, payload: unknown): Mapping {
   const raw = payload as JsonRecord;
   const vendorKey = String(raw.vendorKey || "").trim();
   const taskKind = (raw.taskKind as ProfileKind) || "chat";
@@ -479,6 +502,12 @@ export function upsertModelCatalogMapping(payload: unknown): Mapping {
     updatedAt: t,
   };
   state.mappings = [mapping, ...state.mappings.filter((item) => item.id !== id)];
+  return mapping;
+}
+
+export function upsertModelCatalogMapping(payload: unknown): Mapping {
+  const state = readCatalog();
+  const mapping = applyMappingUpsert(state, payload);
   writeCatalog(state);
   return mapping;
 }
@@ -507,33 +536,43 @@ export function exportModelCatalogPackage(params?: unknown): unknown {
   };
 }
 
+/**
+ * 事务化导入（P2·根治半成品）：整包先在**一份内存 state** 上逐项应用 + 校验，全部成功才
+ * `writeCatalog` 一次性落盘；任一 bundle 抛错则**整体不写**——磁盘保持导入前原样，绝不留下
+ * 「vendor 写了但它的 model 校验失败」这类不可用的半接入空壳。失败原因汇进 errors 返回。
+ *
+ * 为什么是「全有或全无」而非「跳过坏的、留下好的」：一个 bundle 内部就是 vendor+key+model+mapping
+ * 的整体，单条 upsert 立即落盘才会产生中途半截态。把写盘收敛到唯一 choke point（事务边界），
+ * 这类 bug 整类消失，而不是逐 upsert 补偿。`apply*` 纯函数与单条公开 upsert 共用（无第二份逻辑）。
+ */
 export function importModelCatalogPackage(payload: unknown): unknown {
-  const state = readCatalog();
   const raw = payload as { vendors?: Array<{ vendor?: unknown; apiKey?: unknown; models?: unknown[]; mappings?: unknown[] }> };
+  const state = readCatalog();
   let vendors = 0;
   let models = 0;
   let mappings = 0;
-  const errors: string[] = [];
-  for (const bundle of raw.vendors || []) {
-    try {
-      const vendor = upsertModelCatalogVendor(bundle.vendor);
+  try {
+    for (const bundle of raw.vendors || []) {
+      const vendor = applyVendorUpsert(state, bundle.vendor);
       vendors += 1;
       const apiKey = bundle.apiKey as JsonRecord | undefined;
-      if (apiKey?.apiKey) upsertModelCatalogVendorApiKey(vendor.key, apiKey);
+      if (apiKey?.apiKey) applyApiKeyUpsert(state, vendor.key, apiKey);
       for (const model of bundle.models || []) {
-        upsertModelCatalogModel({ ...(model as JsonRecord), vendorKey: (model as JsonRecord).vendorKey || vendor.key });
+        applyModelUpsert(state, { ...(model as JsonRecord), vendorKey: (model as JsonRecord).vendorKey || vendor.key });
         models += 1;
       }
       for (const mapping of bundle.mappings || []) {
-        upsertModelCatalogMapping({ ...(mapping as JsonRecord), vendorKey: (mapping as JsonRecord).vendorKey || vendor.key });
+        applyMappingUpsert(state, { ...(mapping as JsonRecord), vendorKey: (mapping as JsonRecord).vendorKey || vendor.key });
         mappings += 1;
       }
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
     }
+  } catch (error) {
+    // 整体回滚：不写盘（磁盘还是导入前的 state），返回 0 计数 + 清晰错误。
+    return { imported: { vendors: 0, models: 0, mappings: 0 }, errors: [error instanceof Error ? error.message : String(error)] };
   }
-  writeCatalog(readCatalog() || state);
-  return { imported: { vendors, models, mappings }, errors };
+  // 全部成功 → 一次性提交。空包也安全（无变更则写回等值 state）。
+  writeCatalog(state);
+  return { imported: { vendors, models, mappings }, errors: [] };
 }
 
 /**

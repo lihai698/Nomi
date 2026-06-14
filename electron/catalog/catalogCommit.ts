@@ -189,9 +189,16 @@ export function deriveVendorKeyFromBaseUrl(baseUrl: string): string {
  * (buildAiSdkModel → createOpenAICompatible), so we deliberately emit NO HTTP
  * mapping here: a fabricated /chat/completions mapping would be unused dead data.
  *
- * No connectivity test in this flow (aligns with opencode): local/custom
- * endpoints vary in tolerance; storing-then-failing-at-call-time is honest and
- * doesn't block legitimate models. A separate, non-blocking test exists.
+ * Connectivity (P3·对齐「接入即验证」纪律，记录现状取舍——不在 commit 里做**阻断式**校验)：
+ * 刻意不在本同步 commit 路径里探活（对齐 opencode）。原因：本地/自定义端点容忍度差异极大
+ * （Ollama / ComfyUI / 各类中转），存了再在首次调用时按真实 vendor 错误报人话（runtime 已结构化
+ * VendorRequestError + describeNetworkError），比在接入时阻断更诚实，也不会把合法模型挡在门外。
+ *
+ * 注意覆盖边界（别误以为已有兜底）：`testModelCatalogMapping`（IPC nomi:model-catalog:mapping:test）
+ * 只覆盖**带 mapping** 的 image/video/异步模型；本路径提交的 text/chat 走直连 AI SDK、刻意无 mapping，
+ * 因此**不被那条测试覆盖**——这一路目前确无显式连通性入口。补一个**非阻断、用户主动触发**的
+ * 「测试连接」（轻量 GET {baseUrl}/models 探活，仅提示不拦提交）是合理的后续；但它需要新增
+ * main.ts IPC + desktopClient 入口（均在本次作用域外），故此处暂记缺口、不落半截 dead export。
  */
 export function commitManualOpenAiCompatibleModels(payload: {
   vendorName: string;

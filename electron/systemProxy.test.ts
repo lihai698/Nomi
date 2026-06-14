@@ -1,12 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import type { Dispatcher } from "undici";
 // 从纯模块导入，避免触发 electron 运行时（CI 纯 Node 会失败）。Session 仅类型引用，已被擦除。
 import {
   describeNetworkError,
   parseEnvProxy,
   parseResolveProxyString,
+  rememberProxyStateForTests,
+  resetProxyStateForTests,
   SelectiveProxyDispatcher,
 } from "./systemProxy";
+
+afterEach(() => {
+  // 代理诊断状态是模块级单例（生效代理标签 / SOCKS 不支持详情），逐用例清场避免串味。
+  resetProxyStateForTests();
+});
 
 describe("parseEnvProxy", () => {
   it("HTTPS_PROXY 优先于 HTTP_PROXY", () => {
@@ -135,5 +142,19 @@ describe("describeNetworkError（把 fetch failed 翻成人话）", () => {
     const out = describeNetworkError(new TypeError("fetch failed"));
     expect(out).toMatch(/网络请求失败/);
     expect(out).not.toBe("fetch failed");
+  });
+
+  it("探到 SOCKS-only（unsupported）后 → 诊断说人话「检测到 SOCKS 但本版不支持，改用 HTTP 代理」，不误说「未启用代理」", () => {
+    rememberProxyStateForTests({ kind: "unsupported", detail: "系统代理是 SOCKS（SOCKS5 127.0.0.1:7891）", source: "system" });
+    const out = describeNetworkError(withCause("ETIMEDOUT"));
+    expect(out).toMatch(/SOCKS/);
+    expect(out).toMatch(/不支持|HTTP 代理/);
+    // 关键：不再误导用户「当前未启用代理」（他明明开了 SOCKS）。
+    expect(out).not.toMatch(/未启用代理/);
+  });
+
+  it("生效 HTTP 代理后 → 诊断带出代理标签（回归既有行为）", () => {
+    rememberProxyStateForTests({ kind: "http", url: "http://127.0.0.1:7897", source: "system" });
+    expect(describeNetworkError(withCause("ETIMEDOUT"))).toMatch(/当前代理/);
   });
 });

@@ -155,7 +155,8 @@ export type Mapping = {
    * 多个模型共享（如 Seedance + Fast 共用一条 image_to_video）。当同一 vendor 下两个模型的**同一 taskKind
    * 需要不同请求形状**时（如 kie 的 HappyHorse 与 Kling 都是 text_to_video，但 body 字段不同），各自带
    * modelKey 区分，避免「按 (vendor,taskKind) 找 mapping 时第一个赢、另一个静默套错模板」。
-   * 选择优先级见 selectTaskMapping：精确 modelKey > generic > 任意 enabled。
+   * 选择优先级见 selectTaskMapping：精确 modelKey > generic（无 modelKey）。无匹配返回 null
+   * （不再「任意 enabled 兜底」静默套别的模型模板）。
    */
   modelKey?: string;
   name: string;
@@ -169,7 +170,14 @@ export type Mapping = {
 
 /**
  * 纯函数：在一组 mapping 里选出该 (vendor, taskKind, modelKey) 该用的那条。
- * 优先级：① 精确绑定该 modelKey 的 → ② generic（无 modelKey）→ ③ 任意 enabled（兜底，兼容老数据）。
+ * 优先级：① 精确绑定该 modelKey 的 → ② generic（无 modelKey）。
+ *
+ * P3 根治（去掉「③ 任意 enabled 兜底」）：旧实现在无精确绑定 + 无 generic 时直接返回
+ * `inBucket[0]`，会把当前 modelKey 静默套上桶里**另一个模型**的请求模板（body 字段全错），
+ * 用户看到的是「莫名其妙的请求形状/参数」而非清晰的「该模型没配 mapping」。改为返回 null，
+ * 让调用方（runtime.findTaskMapping）据此走通用回退/明确报错，绝不张冠李戴。
+ * 向后兼容仍由「② generic（无 modelKey）」覆盖：老数据 Seedance 那条没带 modelKey 即 generic，
+ * 任何 modelKey 都能命中，不受本次收紧影响。
  * 抽成纯函数是为了可单测（runtime.findTaskMapping 读 catalog 后调它）。
  */
 export function selectTaskMapping(
@@ -184,7 +192,7 @@ export function selectTaskMapping(
   return (
     (key ? inBucket.find((m) => (m.modelKey || "").trim() === key) : undefined) ||
     inBucket.find((m) => !m.modelKey) ||
-    inBucket[0]
+    null
   );
 }
 
