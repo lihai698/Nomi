@@ -1,4 +1,4 @@
-import { DEFAULT_NODE_SIZE } from '../model/generationNodeKinds'
+import { getGenerationNodeFootprintSize } from '../model/generationNodeKinds'
 import type { GenerationNodeKind } from '../model/generationCanvasTypes'
 
 /**
@@ -14,12 +14,7 @@ import type { GenerationNodeKind } from '../model/generationCanvasTypes'
  * 步距 derive 自节点尺寸（不 hardcode），与 trajectoryLayout 的「间距从尺寸推导」一致。
  */
 
-const FALLBACK_SIZE = { width: 340, height: 280 }
 const GAP = 48
-// 名义尺寸（registry.defaultSize）与真实渲染高度有差：如 image 名义 340×280，空态实际
-// 渲染约 340 高。若按名义算步距，两卡会重叠 ≈(渲染-名义) px（真机实测 12px）。给碰撞足迹
-// 统一外扩这个安全余量，让间距吸收「渲染比名义高」的增量 → 任何模型空态都不重叠。
-const RENDER_SAFETY = 64
 
 export type NodeBox = {
   kind: GenerationNodeKind
@@ -30,10 +25,11 @@ export type NodeBox = {
 type Size = { width: number; height: number }
 type Point = { x: number; y: number }
 
-/** 节点足迹 = 名义尺寸 + RENDER_SAFETY 外扩（吸收渲染比名义大的增量）。 */
+// 节点足迹 = 名义尺寸 + NODE_RENDER_SAFETY（吸收渲染比名义大的增量）。与批量布局
+// (agent/trajectoryLayout) 共用 model 层的同一足迹函数——单插避让和批量布局同一余量，
+// 不许各搞一套（第二真相源）。
 function sizeFor(node: Pick<NodeBox, 'kind' | 'size'>): Size {
-  const base = node.size ?? DEFAULT_NODE_SIZE[node.kind] ?? FALLBACK_SIZE
-  return { width: base.width + RENDER_SAFETY, height: base.height + RENDER_SAFETY }
+  return getGenerationNodeFootprintSize(node.kind, node.size)
 }
 
 /** 两个轴对齐矩形是否相交。 */

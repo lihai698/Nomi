@@ -37,6 +37,22 @@ export function getGenerationNodeDefaultSize(kind: GenerationNodeKind): { width:
   return getGenerationNodeDefinition(kind).defaultSize
 }
 
+// 名义尺寸（registry.defaultSize）与真实渲染尺寸有差：footer/动态内容让实际比名义高一截
+// （真机实测十几到数十 px）。凡「落点间距 / 碰撞避让」都用这个外扩后的**足迹**来算，让间距
+// 吸收「渲染 > 名义」的增量 → 任何 kind、任何布局路径都不重叠。
+// 单插避让（store/resolveInsertionPosition）与批量布局（agent/trajectoryLayout）共用同一常量，
+// 不许各搞一套余量（那就是第二份真相源，正是「有的路径会重叠」这类 bug 的来源）。
+export const NODE_RENDER_SAFETY = 64
+const FOOTPRINT_FALLBACK_SIZE = { width: 340, height: 280 }
+
+export function getGenerationNodeFootprintSize(
+  kind: GenerationNodeKind,
+  size?: { width: number; height: number },
+): { width: number; height: number } {
+  const base = size ?? DEFAULT_NODE_SIZE[kind] ?? FOOTPRINT_FALLBACK_SIZE
+  return { width: base.width + NODE_RENDER_SAFETY, height: base.height + NODE_RENDER_SAFETY }
+}
+
 export function getGenerationNodeLabel(kind: GenerationNodeKind): string {
   return getGenerationNodeDefinition(kind).label
 }

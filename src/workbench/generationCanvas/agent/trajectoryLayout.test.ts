@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { layoutPlannedNodes, trajectoryOrigin } from './trajectoryLayout'
-import { DEFAULT_NODE_SIZE } from '../model/generationNodeKinds'
+import { DEFAULT_NODE_SIZE, NODE_RENDER_SAFETY } from '../model/generationNodeKinds'
 import type { GenerationNodeKind } from '../model/generationCanvasTypes'
 
 const kinds = (list: string[]): GenerationNodeKind[] => list as GenerationNodeKind[]
@@ -68,9 +68,35 @@ describe('trajectoryLayout（T4：分层布局 + 避让已有节点）', () => {
     const planned = kinds(Array.from({ length: 9 }, () => 'image'))
     const xs = layoutPlannedNodes(planned, []).map((p) => p.x)
     // 9 节点 3 列 → 跨度 = 2 格，远小于旧单行实现的 8 格
-    const cell = DEFAULT_NODE_SIZE.image.width + 48
+    const cell = DEFAULT_NODE_SIZE.image.width + NODE_RENDER_SAFETY
     expect(Math.max(...xs) - Math.min(...xs)).toBe(2 * cell)
     expect(new Set(xs).size).toBe(3)
+  })
+
+  // —— 审计 A5② 续：批量布局间距必须 ≥ 渲染足迹（名义+NODE_RENDER_SAFETY），与单插避让同余量 ——
+  // 名义间距吸收不了「渲染>名义」的高度漂移就会重叠（审计实测的镜头重叠正是此类）。批量布局
+  // 不能比单插避让(resolveInsertionPosition 用 64)更松——否则就是两套余量、批量路径漏网。
+
+  it('分层列内竖排间距 ≥ 渲染足迹高（吸收渲染>名义漂移）', () => {
+    const planned = kinds(['character', 'image', 'image', 'image', 'video']) // 三层 → 分层形态
+    const positions = layoutPlannedNodes(planned, [])
+    const imageYs = [positions[1].y, positions[2].y, positions[3].y]
+    const footH = DEFAULT_NODE_SIZE.image.height + NODE_RENDER_SAFETY
+    expect(imageYs[1] - imageYs[0]).toBeGreaterThanOrEqual(footH)
+    expect(imageYs[2] - imageYs[1]).toBeGreaterThanOrEqual(footH)
+  })
+
+  it('网格行距/列距 ≥ 渲染足迹（纯视频批走网格回退）', () => {
+    const positions = layoutPlannedNodes(kinds(['video', 'video', 'video', 'video']), [])
+    const xs = Array.from(new Set(positions.map((p) => p.x))).sort((a, b) => a - b)
+    const ys = Array.from(new Set(positions.map((p) => p.y))).sort((a, b) => a - b)
+    expect(xs[1] - xs[0]).toBeGreaterThanOrEqual(DEFAULT_NODE_SIZE.video.width + NODE_RENDER_SAFETY)
+    expect(ys[1] - ys[0]).toBeGreaterThanOrEqual(DEFAULT_NODE_SIZE.video.height + NODE_RENDER_SAFETY)
+  })
+
+  it('异高混批走网格（混入 text/output 等 null 层）名义零重叠', () => {
+    const planned = kinds(['image', 'text', 'video', 'output', 'image', 'text'])
+    assertNoOverlap(planned, layoutPlannedNodes(planned, []))
   })
 
   // —— 审计 A3 根治断言：步距由节点尺寸 derive，任意两节点 AABB 零重叠 ——
