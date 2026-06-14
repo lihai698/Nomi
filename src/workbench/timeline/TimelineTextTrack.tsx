@@ -14,6 +14,7 @@ export default function TimelineTextTrack(): JSX.Element {
   const selectedTextClipId = useWorkbenchStore((state) => state.selectedTextClipId)
   const selectTimelineTextClip = useWorkbenchStore((state) => state.selectTimelineTextClip)
   const moveTimelineTextClip = useWorkbenchStore((state) => state.moveTimelineTextClip)
+  const resizeTimelineTextClip = useWorkbenchStore((state) => state.resizeTimelineTextClip)
   const setTimelinePlayhead = useWorkbenchStore((state) => state.setTimelinePlayhead)
   const clipsRef = React.useRef<HTMLDivElement | null>(null)
 
@@ -45,6 +46,33 @@ export default function TimelineTextTrack(): JSX.Element {
     window.addEventListener('pointermove', handleMove)
     window.addEventListener('pointerup', handleUp)
   }, [moveTimelineTextClip, scale, selectTimelineTextClip])
+
+  // 拖左/右边缘改时长：钉住对侧、移动本侧（resizeTextClip 已保证 ≥1 帧）。拖动 commit:false，松手 commit:true。
+  const beginResize = React.useCallback((event: React.PointerEvent<HTMLElement>, clipId: string, edge: 'left' | 'right') => {
+    event.preventDefault()
+    event.stopPropagation()
+    const pointerId = event.pointerId
+    const target = event.currentTarget
+    target.setPointerCapture?.(pointerId)
+    selectTimelineTextClip(clipId)
+
+    const apply = (clientX: number, commit: boolean) => {
+      const bounds = clipsRef.current?.getBoundingClientRect()
+      if (!bounds) return
+      const frame = Math.max(0, pixelToFrame(clientX - bounds.left, scale))
+      resizeTimelineTextClip(clipId, edge, frame, { commit })
+    }
+
+    const handleMove = (move: PointerEvent) => apply(move.clientX, false)
+    const handleUp = (up: PointerEvent) => {
+      apply(up.clientX, true)
+      target.releasePointerCapture?.(pointerId)
+      window.removeEventListener('pointermove', handleMove)
+      window.removeEventListener('pointerup', handleUp)
+    }
+    window.addEventListener('pointermove', handleMove)
+    window.addEventListener('pointerup', handleUp)
+  }, [resizeTimelineTextClip, scale, selectTimelineTextClip])
 
   return (
     <div className={cn(
@@ -114,6 +142,20 @@ export default function TimelineTextTrack(): JSX.Element {
             >
               <IconLetterCase size={12} className="flex-none opacity-70" />
               <span className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">{clip.text || '（空）'}</span>
+              <span
+                role="separator"
+                aria-label="向左调整时长"
+                className="absolute inset-y-0 left-0 w-1.5 z-[2] cursor-ew-resize hover:bg-[var(--workbench-text)]"
+                onPointerDown={(event) => beginResize(event, clip.id, 'left')}
+                onClick={(event) => event.stopPropagation()}
+              />
+              <span
+                role="separator"
+                aria-label="向右调整时长"
+                className="absolute inset-y-0 right-0 w-1.5 z-[2] cursor-ew-resize hover:bg-[var(--workbench-text)]"
+                onPointerDown={(event) => beginResize(event, clip.id, 'right')}
+                onClick={(event) => event.stopPropagation()}
+              />
             </button>
           )
         })}

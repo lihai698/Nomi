@@ -20,16 +20,16 @@
 
 ### 第一批 · 小修（立刻做，本文档优先项）
 范围：
-- **A1 时长可编辑**：预览控制条选中文字 clip 时，在「字号/字体」旁加「时长(秒)」控件。
-  - UI：照 `TimelinePreview.tsx:683-698` 字号那段平行加，token-only。
-  - store：新增改时长 action（复用 `resizeTextClip`，右边缘设 `startFrame + 秒*fps`）。
+- **A1 时长可编辑**（用户拍板 v2：在时间轴轨道拖 clip 边缘，不在控制条放按钮）：
+  - 文字轨 `TimelineTextTrack.tsx` 的 clip 加左右边缘 resize 把手，拖动调已存在的 `resizeTimelineTextClip(id,'left'|'right',frame)`（≥1 帧兜底）。
+  - 控制条 `TextClipStyleControls.tsx` 只保留字号/字体。
   - 联动：`computeTimelineDuration` 已订阅 textClips，总时长/播放区间自动重算。
 - **A2 拖拽到画布**：
-  - 放开 stage drop 的 image-only 过滤，让视频文件也能拖到画布建 asset 节点（`GenerationCanvas.tsx:438`、`assetImportAdapter.ts:124` 的 `filterImportableImageFiles`）。
-  - 素材库格子加 `draggable`/`onDragStart`，可从库拖到画布空白处（建独立卡）或拖到节点（挂参考）。
-- 验收门：R8 样张对账 + 真机走查（拖一张图/一段视频进画布、改一条字幕时长并看预览总时长变化）。
+  - 素材库格子加 `draggable`（图片/视频，新增 `assetLibraryDrag` 契约）→ 画布 stage 建 asset 节点。
+  - 文件树 `FileTreeNode.tsx` 放开视频可拖（原只图片）；画布 workspace 落点按 `kind` 建图片/视频节点（原写死 image）。
+- 验收门：R8 + 真机走查（从素材库/文件树拖图与视频进画布、拖字幕 clip 边缘改时长看预览总时长变化）。
 
-不动项：节点参考挂载逻辑（`useNodeAssetDrop.ts` 已支持多类型，不改）；时间轴文字轨拖拽（`TimelineTextTrack.tsx` 既有移动逻辑不动）。
+不动项：节点参考挂载逻辑（`useNodeAssetDrop.ts` 已支持多类型，不改）；OS 原始视频文件直拖（A2b，另设计）。
 
 ### 第二批 · 分镜卡片回看（需先出样张）
 目标：解决用户「分镜方案关掉后怎么找回 / 再点入改 / 历史记录」。

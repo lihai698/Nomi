@@ -11,7 +11,3 @@ export const CONTROL_ICON_BUTTON_CLASS =
   'w-6 h-6 inline-grid place-items-center p-0 border border-transparent rounded-full bg-transparent text-[var(--workbench-muted)] ' +
   'enabled:cursor-pointer enabled:hover:bg-[var(--workbench-hover)] enabled:hover:text-[var(--workbench-ink)] ' +
   'disabled:hover:bg-transparent disabled:hover:text-[var(--workbench-muted)]'
-
-// 字幕/标题卡停留时长的可编辑范围：最短 0.5s（仍 ≥1 帧由 resizeTextClip 兜底），步进 0.5s。
-export const TEXT_CLIP_MIN_SEC = 0.5
-export const TEXT_CLIP_STEP_SEC = 0.5

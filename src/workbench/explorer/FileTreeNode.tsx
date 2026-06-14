@@ -41,8 +41,8 @@ export default function FileTreeNode({ node, projectId, depth = 0 }: Props): JSX
     if (node.kind !== 'directory') openPreview(projectId, node)
   }, [node, projectId, openPreview])
 
-  // 仅图片可拖进画布（画布创建图片节点）。文件已在项目里，拖拽只传引用，不重新导入。
-  const draggable = node.kind === 'image' && Boolean(projectId)
+  // 图片/视频可拖进画布（引用已在项目里的文件，不重新导入）。
+  const draggable = (node.kind === 'image' || node.kind === 'video') && Boolean(projectId)
   const handleDragStart = React.useCallback((event: React.DragEvent<HTMLButtonElement>) => {
     if (!draggable) return
     const payload: WorkspaceFileDragPayload = { projectId, relativePath: node.relativePath, name: node.name, kind: node.kind }

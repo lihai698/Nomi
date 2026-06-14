@@ -27,21 +27,22 @@ export function handleCanvasStageDrop(event: DragEvent<HTMLDivElement>, ctx: Can
     y: (event.clientY - rect.top - ctx.offset.y) / ctx.zoom,
   }
 
-  // 1) 项目文件树拖入：文件已在项目里，直接用 nomi-local 协议引用，创建图片节点。
+  // 1) 项目文件树拖入：文件已在项目里，直接用 nomi-local 协议引用，按 kind 建图片/视频 asset 节点。
   const workspaceDrag = parseWorkspaceFileDrag(event.dataTransfer.getData(WORKSPACE_FILE_DRAG_MIME))
   if (workspaceDrag) {
     event.preventDefault()
     event.stopPropagation()
+    const kind: 'image' | 'video' = workspaceDrag.kind === 'video' ? 'video' : 'image'
     const url = buildWorkspaceFileUrl(workspaceDrag.projectId, workspaceDrag.relativePath)
     const store = useGenerationCanvasStore.getState()
     const node = store.addNode({
       kind: 'asset',
-      title: workspaceDrag.name.replace(/\.[^.]+$/, '') || '本地素材',
+      title: workspaceDrag.name.replace(/\.[^.]+$/, '') || (kind === 'video' ? '本地视频' : '本地素材'),
       prompt: '',
       position: { x: clampNodePos(basePosition.x), y: clampNodePos(basePosition.y) },
       categoryId: ctx.activeCategoryId,
     })
-    const result = { id: `workspace-${node.id}-${Date.now()}`, type: 'image' as const, url, createdAt: Date.now() }
+    const result = { id: `workspace-${node.id}-${Date.now()}`, type: kind, url, createdAt: Date.now() }
     store.updateNode(node.id, {
       result,
       history: [result],
