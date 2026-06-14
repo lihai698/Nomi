@@ -36,12 +36,12 @@
 
 ### 相 2 · 持久化/数据治理
 - [x] **P0-2** 真删盘（commit 1ebda46）：新增 deleteWorkspaceProject——native 真删、外部文件夹只解绑（双重边界防误删用户目录）；UI 文案/ toast 按 source 如实区分。
-- [ ] **P0-3** 草稿态延迟落盘 + 空壳 GC（退出/启动回收零编辑空项目）。
+- [~] **P0-3** 草稿态延迟落盘 + 空壳 GC：raman 分支按「renderer 延迟」实现后**真机测出不达标**——「真不写盘」跨 project record / conversations / 画布事件**三个持久化子系统**（详见 `docs/plan/2026-06-15-draft-no-write-gate.md`）。半成品已 revert；**完整版（共享 draft-gate）用户拍板在 main 上另起**。空壳 GC 兜底现状仍在（症状不暴露给用户）。
 - [ ] **P0-4 + 存量收敛**：一次性迁移——示例按 name 去重留最新 + 回填 seedKey；删空壳未命名。带 dry-run 日志。
 - [ ] **P1** discoverLegacyProjects 移出 list 热路径（只首次/手动同步）。
 - [ ] **P1** 外部文件夹 home/系统目录 denylist + 非空二次确认。
-- [ ] **P1** 统一 ProjectCreationSpec 单一构造点 + 不变量测试（create 后必含 seedKey/categoryId/workspaceMode）。
-- [ ] **P2** 迁移幂等改语义相等（止 revision 漂移 + toast 复弹）；缩略图降级链 + 派生收口单份。
+- [x] **P1** 统一 ProjectCreationSpec 单一构造点 + 不变量测试（commit 990e39a，已合并 main）：newProject/tryExample 收口到 createAndOpenProject 单一编排点，workspaceMode 为 spec 必填字段；不变量测试钉「任何入口产物过迁移 alreadyMigrated + 默认节点带 categoryId」。
+- [x] **P2** 缩略图派生收口（commit f397ef1，已合并 main）：renderer/main 双份以「证明等价」收口（跨 tsconfig 无法共享纯模块）+ 等价回归测试 `thumbnailDerive.equivalence.test.ts`。〔迁移幂等语义相等此前已做〕
 
 ### 相 3 · 创作/流式
 - [ ] **P0-6** storyboardPlan 持久化（接入 projectRecordSchema + projectNormalize + workbenchPersistence）。
@@ -58,7 +58,7 @@
 ### 相 5 · runtime/模型接入
 - [ ] **P1** 结构化 VendorRequestError 收口三条出口 + extraHeaders 注入三路径统一。
 - [ ] **P1** taskCache「正在轮询」保护 / 区分驱逐 vs 不存在；catalog 高版本写保护；findExecutableModel 唯一键。
-- [ ] **P2/P3** importCatalog 事务化；代理热更新 + SOCKS 用户可见提示；runtime.ts 资产 I/O 拆出；manual 接入连通性测试。
+- [~] **P2/P3** importCatalog 事务化〔已做〕；代理热更新 + SOCKS 用户可见提示；runtime.ts 资产 I/O 拆出；manual 接入连通性测试〔基建早已建好(dbe6665)，本轮按用户拍板把保存改非阻断 + 二次确认，commit 7b0a053 已合并 main；欠保存按钮真机走查〕。
 - [ ] **P0-8** 非文本模型自动接入（archetype 运行期可声明契约）——**架构级，需 R7 + 独立 plan**，本轮不强行。
 
 ### 相 6 · 时间轴/导出（按"ffmpeg 为主"决策）
