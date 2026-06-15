@@ -99,6 +99,10 @@ export function isVideoLikeGenerationNodeKind(kind: GenerationNodeKind): boolean
   return getGenerationNodeExecutionKind(kind) === 'video'
 }
 
+export function isAudioLikeGenerationNodeKind(kind: GenerationNodeKind): boolean {
+  return getGenerationNodeExecutionKind(kind) === 'audio'
+}
+
 // kind→分类映射的实现已下沉到 generationCanvasTypes（纯模型层，迁移与创建共用，
 // 不拖 nodes/registry 的 UI 依赖链）。此处保留导出面，既有调用方 import 路径不变。
 export { getDefaultCategoryForNodeKind } from './generationCanvasTypes'

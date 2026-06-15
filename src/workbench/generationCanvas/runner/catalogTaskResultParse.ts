@@ -1,5 +1,4 @@
 import {
-  type TaskAssetDto,
   type TaskKind,
   type TaskResultDto,
 } from '../../api/taskApi'
@@ -11,7 +10,8 @@ import type {
 } from '../model/generationCanvasTypes'
 import { asFiniteNumber, asTrimmedString, selectedModelKey } from './catalogTaskResolve'
 
-const TEXT_TASK_KINDS = new Set<TaskKind>(['chat', 'prompt_refine', 'image_to_prompt'])
+// transcribe(Whisper) 也是「无 asset、文本在 raw」——同走文本支（raw.text 由 extractTextFromChatRaw 末尾捕获）。
+const TEXT_TASK_KINDS = new Set<TaskKind>(['chat', 'prompt_refine', 'image_to_prompt', 'transcribe'])
 
 /**
  * C5: 从 chat 任务的 raw 响应里取出模型生成的文本。runtime 文本分支直接 POST
@@ -49,17 +49,9 @@ function extractTextFromChatRaw(raw: unknown): string {
   return asTrimmedString(record.text)
 }
 
-function firstAsset(result: TaskResultDto, expectedType: GenerationResultType): TaskAssetDto {
-  const asset = result.assets.find((item) => item.type === expectedType && asTrimmedString(item.url))
-  if (!asset) {
-    const label = expectedType === 'image' ? '图片' : '视频'
-    throw new Error(`模型任务完成但没有返回${label}地址`)
-  }
-  return asset
-}
-
 function generationTypeForTask(taskKind: TaskKind): GenerationResultType {
   if (taskKind === 'text_to_video' || taskKind === 'image_to_video') return 'video'
+  if (taskKind === 'text_to_audio') return 'audio'
   return 'image'
 }
 
@@ -128,9 +120,10 @@ export function normalizeCatalogTaskResult(
   // Prefer actual asset type over taskKind inference — if the API returns a video asset, show video
   const firstVideoAsset = result.assets.find((item) => item.type === 'video' && asTrimmedString(item.url))
   const firstImageAsset = result.assets.find((item) => item.type === 'image' && asTrimmedString(item.url))
-  const asset = firstVideoAsset || firstImageAsset || result.assets.find((item) => asTrimmedString(item.url))
-  if (!asset) throw new Error(inferredType === 'video' ? '模型任务完成但没有返回视频地址' : '模型任务完成但没有返回图片地址')
-  const type = (asset.type === 'video' || asset.type === 'image') ? asset.type : inferredType
+  const firstAudioAsset = result.assets.find((item) => item.type === 'audio' && asTrimmedString(item.url))
+  const asset = firstVideoAsset || firstImageAsset || firstAudioAsset || result.assets.find((item) => asTrimmedString(item.url))
+  if (!asset) throw new Error(inferredType === 'video' ? '模型任务完成但没有返回视频地址' : inferredType === 'audio' ? '配音生成完成但没有返回音频' : '模型任务完成但没有返回图片地址')
+  const type = (asset.type === 'video' || asset.type === 'image' || asset.type === 'audio') ? asset.type : inferredType
   // E11: propagate provenance from electron TaskResult into the node result.
   const provenance = extractProvenanceFromTaskResult(result)
   return {

@@ -51,7 +51,7 @@ async function runTextToSpeech(input: AudioTaskInput): Promise<TaskResult> {
     method: "POST",
     path: TTS_PATH,
     headers: { Authorization: "Bearer {{user_api_key}}", "Content-Type": "application/json" },
-    body: { model: "{{model.modelKey}}", input: "{{request.prompt}}", voice: "{{request.params.voice}}", response_format: "wav", speed: "{{request.params.speed}}" },
+    body: { model: "{{request.params.model}}", input: "{{request.prompt}}", voice: "{{request.params.voice}}", response_format: "wav", speed: "{{request.params.speed}}" },
   };
   const built = buildProfileHttpRequest({ vendor, model, apiKey, request, operation: op });
   let response: Response;
@@ -62,7 +62,7 @@ async function runTextToSpeech(input: AudioTaskInput): Promise<TaskResult> {
       body: typeof built.body === "string" ? built.body : JSON.stringify(built.body),
     });
   } catch (error: unknown) {
-    throw new Error(`配音生成失败（${vendor.key} 网络错误）：${(error instanceof Error ? error.message : String(error)).slice(0, 256)}`);
+    throw new Error(`配音生成失败（${vendor.key} 网络错误）：${(error instanceof Error ? error.message : String(error)).slice(0, 256)}`, { cause: error });
   }
   if (!response.ok) {
     throw new Error(`配音生成失败（${vendor.key} HTTP ${response.status}）：${(await safeText(response)).slice(0, 300) || "(无详情)"}`);
@@ -98,7 +98,8 @@ async function runTranscribe(input: AudioTaskInput): Promise<TaskResult> {
   const form = new FormData();
   const ab = audio.bytes.buffer.slice(audio.bytes.byteOffset, audio.bytes.byteOffset + audio.bytes.byteLength) as ArrayBuffer;
   form.append("file", new Blob([ab], { type: audio.contentType }), audio.fileName);
-  form.append("model", model.modelAlias || model.modelKey);
+  // 真实模型名来自档案当前模式的 modelEnum（注入 params.model），catalog 基模型(nomi-audio)只是入口。
+  form.append("model", firstString(params.model) || model.modelAlias || model.modelKey);
   if (language) form.append("language", language);
   form.append("response_format", "verbose_json");
 
@@ -108,7 +109,7 @@ async function runTranscribe(input: AudioTaskInput): Promise<TaskResult> {
   try {
     response = await fetch(url, { method: "POST", headers: auth, body: form });
   } catch (error: unknown) {
-    throw new Error(`转写失败（${vendor.key} 网络错误）：${(error instanceof Error ? error.message : String(error)).slice(0, 256)}`);
+    throw new Error(`转写失败（${vendor.key} 网络错误）：${(error instanceof Error ? error.message : String(error)).slice(0, 256)}`, { cause: error });
   }
   if (!response.ok) {
     throw new Error(`转写失败（${vendor.key} HTTP ${response.status}）：${(await safeText(response)).slice(0, 300) || "(无详情)"}`);

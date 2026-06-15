@@ -58,10 +58,10 @@ export const VIDEO_MODELS: ModelOption[] = [
   { value: 'veo_3_1_i2v_s_fast_fl_landscape', label: 'Veo 3.1 i2v (Fast, FL, Landscape)', vendor: 'veo' },
 ]
 
-// 音频模型（apimart 同步族）：TTS 配音 + Whisper 转写。meta.archetypeId 指针让档案驱动参数/槽。
+// 声音模型（apimart 同步族）：合 1 个 catalog 条目，档案两模式（配音 TTS / 转写 Whisper）经 modelEnum
+// 注入真实模型名。meta.archetypeId 指针让档案驱动模式切换 + 参数/槽（仿 HappyHorse）。
 export const AUDIO_MODELS: ModelOption[] = [
-  { value: 'gpt-4o-mini-tts', label: 'GPT-4o mini TTS', vendor: 'apimart', modelKey: 'gpt-4o-mini-tts', meta: { archetypeId: 'gpt-4o-mini-tts' } },
-  { value: 'whisper-1', label: 'Whisper', vendor: 'apimart', modelKey: 'whisper-1', meta: { archetypeId: 'whisper-1' } },
+  { value: 'nomi-audio', label: '声音', vendor: 'apimart', modelKey: 'nomi-audio', meta: { archetypeId: 'nomi-audio' } },
 ]
 
 export type NodeKind =

@@ -7,7 +7,7 @@ import { narrateGenerationError, narrateProgress, type GenerationErrorKind } fro
 import { parseVendorErrorFromMessage, stripVendorErrorMarker } from './vendorErrorIpc'
 import type { DependencyWavePlan } from './dependencyWaves'
 import { resolveGenerationReferences } from './generationReferenceResolver'
-import { hasArchetypeArrayReferences, resolveArchetypeForModel } from '../nodes/controls/archetypeMeta'
+import { currentArchetypeMode, hasArchetypeArrayReferences, resolveArchetypeForModel } from '../nodes/controls/archetypeMeta'
 
 export type RunGenerationNodeOptions = {
   executor?: GenerationNodeExecutor
@@ -384,6 +384,20 @@ export function canRunGenerationNode(
   if (executionKind === 'image') return true
   // C5: 文本节点只要选了文本模型就能生成；prompt 缺失由 buildCatalogTaskRequest 兜底报错。
   if (executionKind === 'text') return true
+  // 声音：配音(台词缺失下游兜底，同 text 可生成)；转写需先有音频参考(audio_ref 槽)。
+  if (executionKind === 'audio') {
+    if (!('meta' in node)) return true
+    const meta = node.meta || {}
+    const audioArchetype = resolveArchetypeForModel({
+      modelKey: typeof meta.modelKey === 'string' ? meta.modelKey : undefined,
+      modelAlias: typeof meta.modelAlias === 'string' ? meta.modelAlias : undefined,
+      meta,
+    })
+    const mode = audioArchetype ? currentArchetypeMode(audioArchetype, meta) : null
+    const needsAudioRef = (mode?.slots || []).some((slot) => slot.kind === 'audio_ref')
+    if (!needsAudioRef) return true
+    return Boolean(audioArchetype && hasArchetypeArrayReferences(meta, audioArchetype))
+  }
   if (executionKind !== 'video') return false
   if (!('id' in node) || !node.id) return false
   const references = resolveGenerationReferences(node, context)

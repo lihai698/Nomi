@@ -19,9 +19,12 @@ import { persistActiveWorkbenchProjectNow } from '../../project/workbenchProject
 import {
   getGenerationNodeExecutionKind,
   getGenerationNodePromptPlaceholder,
+  isAudioLikeGenerationNodeKind,
   isImageLikeGenerationNodeKind,
   isVideoLikeGenerationNodeKind,
 } from '../model/generationNodeKinds'
+import { resolveArchetypeForModel } from '../../../config/modelArchetypes'
+import { currentArchetypeMode } from './controls/archetypeMeta'
 import { getTextGenMode, type TextGenMode } from '../runner/textActions'
 
 // C5 P2：文本节点的三种生成模式。
@@ -86,6 +89,19 @@ export default function NodeGenerationComposer({ node, visualSize }: Props): JSX
   const canGenerateNow = canGenerate || (hasPendingRefs && !isGenerating)
   const composerLayout = floatingComposerLayout(visualSize.width, visualSize.height, node.kind)
   const isTextKind = node.kind === 'text'
+  // 声音节点：解析当前档案模式（配音 speech / 转写 transcribe），驱动「台词框 vs 音频参考槽」分流。
+  const isAudioKind = isAudioLikeGenerationNodeKind(node.kind)
+  const audioMode = React.useMemo(() => {
+    if (!isAudioKind) return null
+    const meta = node.meta || {}
+    const archetype = resolveArchetypeForModel({
+      modelKey: typeof meta.modelKey === 'string' ? meta.modelKey : undefined,
+      modelAlias: typeof meta.modelAlias === 'string' ? meta.modelAlias : undefined,
+      meta,
+    })
+    return archetype ? currentArchetypeMode(archetype, meta) : null
+  }, [isAudioKind, node.meta])
+  const audioIsTranscribe = audioMode?.transportTaskKind === 'transcribe'
   const textGenMode = getTextGenMode(node)
   // 持有 prompt 编辑器实例,供「点参考 tile → 在光标处插入 chip」(@ 内联引用主路径)。
   const [promptEditor, setPromptEditor] = React.useState<Editor | null>(null)
@@ -197,7 +213,8 @@ export default function NodeGenerationComposer({ node, visualSize }: Props): JSX
         )}
         style={{ maxHeight: composerLayout.maxHeight, ...(cardWidth ? { width: cardWidth } : {}) }}
       >
-      {isImageLikeGenerationNodeKind(node.kind) || isVideoLikeGenerationNodeKind(node.kind) ? (
+      {/* 参考区：图像/视频的参考槽，以及声音的「配音生成/转写」模式切换 + 转写的音频参考槽。 */}
+      {isImageLikeGenerationNodeKind(node.kind) || isVideoLikeGenerationNodeKind(node.kind) || isAudioKind ? (
         <>
           <NodeParameterControls node={node} section="references" onInsertMention={insertMention} />
           {/* 样张 v4 .divider：参考区与描述之间一条极淡分隔线 */}
@@ -228,18 +245,21 @@ export default function NodeGenerationComposer({ node, visualSize }: Props): JSX
       ) : null}
       {/* 长 prompt 在编辑器内部滚动/换行；底栏永远贴底（卡宽确定，提示词在卡宽内自然换行，不撑爆）。 */}
       {/* 提示词至少 3 行高（min-h-[72px]）——参考区/底栏再多也不把它挤成 1 行（修③）；超长时本区滚动。 */}
-      <div className={cn('flex-1 min-h-[72px] overflow-auto')}>
-        <PromptEditor
-          className={cn('min-h-[72px]')}
-          value={node.prompt || ''}
-          placeholder={isTextKind ? TEXT_MODE_PLACEHOLDER[textGenMode] : getGenerationNodePromptPlaceholder(node.kind)}
-          editable={!node.locked}
-          onChange={(next) => updateNode(node.id, { prompt: next })}
-          onBlur={() => { void persistActiveWorkbenchProjectNow().catch(() => {}) }}
-          onReady={setPromptEditor}
-          mentionCandidates={readArchetypeArray(node.meta || {}, 'referenceImageUrls')}
-        />
-      </div>
+      {/* 转写模式无台词输入（音频参考即输入）——隐藏 prompt，避免误导。 */}
+      {audioIsTranscribe ? null : (
+        <div className={cn('flex-1 min-h-[72px] overflow-auto')}>
+          <PromptEditor
+            className={cn('min-h-[72px]')}
+            value={node.prompt || ''}
+            placeholder={isTextKind ? TEXT_MODE_PLACEHOLDER[textGenMode] : getGenerationNodePromptPlaceholder(node.kind)}
+            editable={!node.locked}
+            onChange={(next) => updateNode(node.id, { prompt: next })}
+            onBlur={() => { void persistActiveWorkbenchProjectNow().catch(() => {}) }}
+            onReady={setPromptEditor}
+            mentionCandidates={readArchetypeArray(node.meta || {}, 'referenceImageUrls')}
+          />
+        </div>
+      )}
       {/* 底栏铺满卡宽（w-full）：卡宽由「最宽模型」恒定，生成钮 ml-auto 永远贴右；
           换到参数少的模型时底栏内容靠左、右侧留白，生成钮仍锁死右下角（不再随参数横排漂移）。 */}
       <div className={cn('flex items-center gap-2 mt-auto pt-1 shrink-0 w-full')}>
