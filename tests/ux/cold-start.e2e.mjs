@@ -1,7 +1,8 @@
 // 冷启动 J3 走查（全新安装模拟）——隔离 userData + 空 NOMI_PROJECTS_DIR 启动，验证：
-//   CS1：首页（项目库）有没有「模型接入」入口？新用户零模型时能不能自己找到去接入的地方？
-//   CS2：全新安装零文本模型预置 → 点「30 秒体验」会不会第一步就死（Agent 拆镜头需要文本模型）？
-// 这是已知 P0 断路点（见 docs/plan backlog #D）。本脚本只暴露/取证，不修。
+//   CS1：全新安装直接落标准项目库页（空库不再有介绍 hero），动作卡片可见、能新建项目。
+//   CS2：零文本模型时，缺模型状态条 [data-model-banner] 升权承载模型接入路径，
+//        点「接入文本模型」能打开模型接入面板（不是死路）。
+// 空库 hero（「30 秒体验」主 CTA）已随空库介绍首屏一起删除，模型接入路径改由状态条承载。
 //
 // 用法：node tests/ux/cold-start.e2e.mjs
 import { _electron as electron } from "playwright";
@@ -47,84 +48,69 @@ try {
   // 取证 1：冷启动首页快照
   await win.screenshot({ path: path.join(shotsDir, "cold-01-library.png") });
 
-  // CS0：确认确实是全新安装——项目库为空、模型目录为空
-  const initial = await win.evaluate(async () => {
+  // CS0：确认确实是全新安装——项目库为空、模型目录零文本模型。
+  // 经主进程桥 window.nomiDesktop.modelCatalog 读（built dist 下可用；不走 dev-only 的 /src import）。
+  const initial = await win.evaluate(() => {
     let textModels = -1;
     try {
-      const bridge = window.desktopBridge || window.nomiDesktop || null;
-      // 经渲染层 API 读模型目录（与 tryExample 用的同一条）
-      const mod = await import("/src/workbench/api/modelCatalogApi.ts").catch(() => null);
-      if (mod?.listWorkbenchModelCatalogModels) {
-        const list = await mod.listWorkbenchModelCatalogModels({ kind: "text", enabled: true }).catch(() => []);
-        textModels = list.length;
-      }
-      void bridge;
+      const mc = window.nomiDesktop?.modelCatalog;
+      if (mc) textModels = mc.listModels({ kind: "text", enabled: true }).length;
     } catch { /* ignore */ }
-    const cards = document.querySelectorAll('[role="button"]');
-    const projectCards = Array.from(cards).filter((el) => el.querySelector(".aspect-video")).length;
+    const projectCards = document.querySelectorAll('[data-project-card]').length;
     return { textModels, projectCards };
   });
   console.log(`\n── 冷启动初始状态 ──\n  文本模型数=${initial.textModels}，项目卡数=${initial.projectCards}`);
+  check("全新安装：项目库为空（0 张项目卡）", initial.projectCards === 0, `projectCards=${initial.projectCards}`);
+  check("全新安装：零文本模型预置", initial.textModels === 0, `textModels=${initial.textModels}`);
 
-  // CS1（v3 起始页）：冷启动 = 空库 + 零模型 → 弱入口按规则隐藏（单一入口互斥），
-  // 模型入口 = 主 CTA「30 秒体验」自动带入；页面用提示行透明告知这件事。
-  const entryProbe = await win.evaluate(() => {
-    const heroCta = document.querySelector("[data-try-now-hero-cta]");
-    const modelHint = document.querySelector("[data-model-hint]");
+  // CS1：空库直接落标准项目库页——动作卡片「新建空白项目 / 打开已有文件夹」可见可点。
+  const libraryProbe = await win.evaluate(() => {
+    const cards = Array.from(document.querySelectorAll(".tc-action-card"));
+    const titles = cards.map((el) => el.querySelector("span span")?.textContent?.trim() || "");
     return {
-      hasEntry: Boolean(heroCta),
-      hintShown: Boolean(modelHint),
-      hintText: modelHint?.textContent?.trim().slice(0, 40) || "",
+      actionCardCount: cards.length,
+      hasNewBlank: titles.some((t) => /新建空白项目/.test(t)),
+      hasOpenFolder: titles.some((t) => /打开已有文件夹/.test(t)),
+      // hero 已删：确认不再渲染旧的「30 秒体验」主 CTA / 介绍标题
+      heroGone: !document.querySelector("[data-try-now-hero-cta], [data-hero-title]"),
+      titles,
     };
   });
-  console.log("\n── CS1：首页模型路径入口 ──");
-  check("首页可见「30 秒体验」主 CTA（模型接入由它带入）", entryProbe.hasEntry);
-  check("零模型时提示行透明告知「会先带你接入」", entryProbe.hintShown, `hint="${entryProbe.hintText}"`);
+  console.log("\n── CS1：空库 = 标准项目库页（动作卡片入口）──");
+  check("空库渲染动作卡片（≥2 张 .tc-action-card）", libraryProbe.actionCardCount >= 2, `count=${libraryProbe.actionCardCount}`);
+  check("可见「新建空白项目」主入口", libraryProbe.hasNewBlank, `titles=${JSON.stringify(libraryProbe.titles)}`);
+  check("可见「打开已有文件夹」入口", libraryProbe.hasOpenFolder, `titles=${JSON.stringify(libraryProbe.titles)}`);
+  check("旧空库介绍 hero / 「30 秒体验」CTA 已删除（不再渲染）", libraryProbe.heroGone);
 
-  // CS3：首屏视觉回归——锁住「text-h1 死 token 把标题塌成 13px」这类隐藏覆盖（computed-style 断言，
-  // 不是 DOM 存在性）。同时确认改进版的免费标 + 分镜预览条都真渲染出来了。
-  const heroVisual = await win.evaluate(() => {
-    const title = document.querySelector("[data-hero-title]");
-    const titleSize = title ? parseFloat(getComputedStyle(title).fontSize) : 0;
-    return {
-      titleSize,
-      freeBadge: Boolean(document.querySelector("[data-free-badge]")),
-      previewCards: document.querySelectorAll('[aria-label="开始使用"] .aspect-video').length,
-    };
+  // CS2：零文本模型 → 缺模型状态条升权承载模型接入路径。
+  // hasTextModel 异步查询，状态条在确证缺失后才出现 → 给它一点时间落地。
+  const banner = win.locator("[data-model-banner]").first();
+  await banner.waitFor({ state: "visible", timeout: 4000 }).catch(() => {});
+  const bannerProbe = await win.evaluate(() => {
+    const el = document.querySelector("[data-model-banner]");
+    if (!el) return { shown: false, hasCta: false };
+    const ctaBtn = Array.from(el.querySelectorAll("button")).find((b) => /接入文本模型/.test(b.textContent || ""));
+    return { shown: true, hasCta: Boolean(ctaBtn) };
   });
-  console.log("\n── CS3：首屏视觉（标题字号/免费标/分镜预览条）──");
-  check("hero 大标题字号 ≥ 20px（防 text-h1 死 token 塌成正文号）", heroVisual.titleSize >= 20, `computed=${heroVisual.titleSize}px`);
-  check("「免费 · 无需绑卡」标签渲染（打消怕收费）", heroVisual.freeBadge);
-  check("「文字 → 分镜 → 成品」预览条渲染（≥3 个画框）", heroVisual.previewCards >= 3, `aspect-video=${heroVisual.previewCards}`);
+  console.log("\n── CS2：零文本模型时模型接入路径（状态条承载）──");
+  check("缺模型状态条 [data-model-banner] 升权显示", bannerProbe.shown);
+  check("状态条带「接入文本模型」按钮", bannerProbe.hasCta);
 
-  // CS2：点「30 秒体验」→ 会不会第一步就死（零文本模型）？
-  const tryBtn = win.locator("[data-try-now-hero-cta]").first();
-  const hasTry = await tryBtn.count();
-  if (hasTry > 0) {
-    await tryBtn.click().catch(() => {});
-    await win.waitForTimeout(2500);
-    await win.screenshot({ path: path.join(shotsDir, "cold-02-after-try.png") });
-    // 体验成功的判定：进入 studio（出现画布或工作台），而不是停在首页弹个 toast。
-    const after = await win.evaluate(() => {
-      const inStudio = Boolean(document.querySelector(".nomi-studio-app, .generation-canvas-v2, [aria-label='Nomi Studio']"));
-      const toast = Array.from(document.querySelectorAll("*")).find((el) => /先接入一个文本模型/.test(el.textContent || "") && el.children.length === 0);
-      const onboardingOpen = Boolean(document.querySelector('[aria-label="模型设置"], [aria-label="模型接入"]'));
-      return { inStudio, toastShown: Boolean(toast), onboardingOpen };
-    });
-    // 全新安装零模型 + 无 key → 本就无法真生成；成功标准是「不死路」：弹引导 toast + 打开模型接入面板，
-    // 让用户当场能填 key 往下走（而不是 toast 进虚空、首页又没接入入口）。
-    console.log("\n── CS2：30 秒体验零模型时是否给出可走的下一步 ──");
-    check("「30 秒体验」零模型时打开模型接入面板（不死路）", after.onboardingOpen,
-      `inStudio=${after.inStudio} / toast=${after.toastShown} / onboarding=${after.onboardingOpen}`);
-  } else {
-    findings.push("首页找不到「30 秒体验」主 CTA（data-try-now-hero-cta）");
-    console.log("  ✗ 首页找不到「30 秒体验」主 CTA");
+  if (bannerProbe.shown && bannerProbe.hasCta) {
+    // 点状态条「接入文本模型」→ 应打开模型接入面板，让用户当场能填 key 往下走（不死路）。
+    await win.locator("[data-model-banner] button", { hasText: "接入文本模型" }).first().click().catch(() => {});
+    await win.waitForTimeout(1200);
+    await win.screenshot({ path: path.join(shotsDir, "cold-02-after-model-cta.png") });
+    const onboardingOpen = await win.evaluate(() =>
+      Boolean(document.querySelector('[aria-label="模型设置"], [aria-label="模型接入"]')),
+    );
+    check("点「接入文本模型」打开模型接入面板（不死路）", onboardingOpen, `onboardingOpen=${onboardingOpen}`);
   }
 
   console.log(`\n冷启动 J3：${passed} 项达标，${findings.length} 项断路/缺口`);
   if (findings.length) {
     console.log("断路/缺口清单：\n - " + findings.join("\n - "));
-    console.log("（这些是已知 P0，取证完用于决定怎么修）");
+    process.exitCode = 1;
   } else {
     console.log("✅ 冷启动 J3 全通");
   }

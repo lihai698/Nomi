@@ -10,7 +10,6 @@
 import React from 'react'
 import { Portal } from '@mantine/core'
 import { OnboardingDrawer } from './OnboardingDrawer'
-import type { OnboardingExperienceHandoff } from './OnboardingWizard'
 
 const PANEL_WIDTH = 320
 const TOP_OFFSET = 64    // 留出 AppBar (56px) + 一点空隙
@@ -19,11 +18,9 @@ const RIGHT_OFFSET = 12
 type Props = {
   opened: boolean
   onClose: () => void
-  /** 「30 秒体验」衔接：传入时 Drawer 直达 wizard 并带上下文条。 */
-  experience?: OnboardingExperienceHandoff
 }
 
-export function OnboardingFloatingPanel({ opened, onClose, experience }: Props): JSX.Element | null {
+export function OnboardingFloatingPanel({ opened, onClose }: Props): JSX.Element | null {
   const panelRef = React.useRef<HTMLDivElement>(null)
 
   // ESC 关闭
@@ -90,7 +87,7 @@ export function OnboardingFloatingPanel({ opened, onClose, experience }: Props):
         }}
       >
         <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-          <OnboardingDrawer experience={experience} />
+          <OnboardingDrawer />
         </div>
         <style>{`
           @keyframes nomi-panel-pop {

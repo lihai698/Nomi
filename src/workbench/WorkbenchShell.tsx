@@ -131,8 +131,8 @@ export default function WorkbenchShell({
     >(() => [workspaceMode]);
 
     React.useEffect(() => {
-        // store 是 workspaceMode 的唯一真相源：打开项目时 openProject/tryExample 已显式
-        // 设好模式（常规→generation、示例→creation）。挂载时直接沿用 store，并把 URL
+        // store 是 workspaceMode 的唯一真相源：打开项目时各入口已显式设好模式
+        // （openProject 常规→generation、newProject 新建→creation）。挂载时直接沿用 store，并把 URL
         // 同步成它——不回读 URL 的 ?step（hash 路由下它在 search 段、跨导航会残留，曾导致
         // 打开项目落错 tab）。?step 仅作为浏览器前进/后退（popstate）的载体。
         const initialMode = useWorkbenchStore.getState().workspaceMode;

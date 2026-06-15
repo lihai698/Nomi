@@ -7,14 +7,9 @@ import { FilePreviewPanel } from "./explorer/FilePreviewPanel";
 import {
     createLocalProject,
     deleteLocalProject,
-    listLocalProjects,
     useLocalProjects,
     type LocalProjectSummary,
 } from "./library/localProjectStore";
-import {
-    buildStoryDocument,
-    type TryNowExample,
-} from "./library/tryNowExamples";
 import type { WorkbenchProjectPersistenceService } from "./project/projectPersistenceService";
 import { useWorkspaceEvents } from "./useWorkspaceEvents";
 import { useWorkbenchStore, type WorkspaceMode } from "./workbenchStore";
@@ -26,7 +21,6 @@ import { cn } from "../utils/cn";
 import { toast } from "../ui/toast";
 import { setDesktopActiveProjectId } from "../desktop/activeProject";
 import { getDesktopBridge } from "../desktop/bridge";
-import { listWorkbenchModelCatalogModels } from "./api/modelCatalogApi";
 import { useHasTextModel } from "./library/useHasTextModel";
 import { SplashIntro } from "./onboarding/SplashIntro";
 import { hasSeenSplash, markSplashSeen } from "./onboarding/onboardingState";
@@ -36,8 +30,8 @@ import { lazyWithChunkBoundary } from "../ui/chunkBoundary";
 
 type AppView = "library" | "studio";
 
-// 项目创建规格：所有创建入口（newProject / tryExample）拼装项目的单一真相源（P1）。
-// 此前三入口各自决定 workspaceMode / seedKey / 创建+刷新+hydrate 的编排，约定不统一——
+// 项目创建规格：所有创建入口拼装项目的单一真相源（P1）。
+// 各入口各自决定 workspaceMode / seedKey / 创建+刷新+hydrate 的编排时约定不统一——
 // 「落地视图不确定」「新建空白被当 legacy 迁移删默认节点」根子都在分头拼装。
 type ProjectCreationSpec = {
     /** 落地视图：必填，每个入口显式声明，杜绝继承上一个项目残留 mode（审计 A11）。*/
@@ -114,9 +108,6 @@ export default function NomiStudioApp(): JSX.Element {
     React.useEffect(() => {
         if (!modelCatalogOpened) refreshModelStatus();
     }, [modelCatalogOpened, refreshModelStatus]);
-    // 「30 秒体验」缺文本模型时挂起的示例：接完模型自动续跑（spec D 屏衔接）。
-    const [pendingTryExample, setPendingTryExample] =
-        React.useState<TryNowExample | null>(null);
     const hydratingProjectRef = React.useRef(false);
     const activeProjectIdRef = React.useRef<string | null>(null);
     const initialHydrationAttemptedRef = React.useRef(false);
@@ -286,7 +277,7 @@ export default function NomiStudioApp(): JSX.Element {
             });
     }, []);
 
-    // 创建并打开项目的单一编排点（收口 newProject / tryExample 的重复拼装，P1）：
+    // 创建并打开项目的单一编排点（收口创建入口的重复拼装，P1）：
     // 落地视图 → 建项目 → 刷新库 → hydrate，按 spec 统一走一遍。落地视图是 spec 必填字段，
     // 由调用方显式声明（审计 A11）；seedKey 决定是否参与空壳 GC（带 seedKey 永不回收）。
     // 桌面端 createLocalProject 经 IPC 落到 ~/Documents/Nomi Projects 自动文件夹，Web 端落
@@ -316,85 +307,10 @@ export default function NomiStudioApp(): JSX.Element {
         });
     }, [createAndOpenProject]);
 
-    /**
-     * Try-Now hero handler (C6). Creates a fresh project, hydrates it,
-     * stuffs the example story into the creation workbench document, then
-     * dispatches a storyboard request so the demo runs end-to-end with a
-     * single click. We delay the storyboard event until after the project
-     * has hydrated and the creation editor has mounted, otherwise the
-     * canvas-assistant listener might not be attached yet.
-     */
-    const tryExample = React.useCallback(
-        async (example: TryNowExample) => {
-            // 模型预检（P0-9 / I-2）：示例靠 Agent「拆镜头」跑起来，需要文本模型。
-            // 没配 → 挂起本次体验，打开带上下文条的模型接入 wizard；保存成功后
-            // 经 nomi-model-catalog-changed 自动续跑（不让「30 秒体验」死在第 0 步）。
-            const textModels = await listWorkbenchModelCatalogModels({
-                kind: "text",
-                enabled: true,
-            }).catch(() => []);
-            if (textModels.length === 0) {
-                setPendingTryExample(example);
-                setModelCatalogOpened(true);
-                return;
-            }
-            // 幂等播种（审计 A8）：示例项目以 seedKey 为身份。已播过 → 直接打开，
-            // 不再重复创建——否则空库 CTA 反复点击、模型接入后的自动续跑（下方
-            // nomi-model-catalog-changed 重放）都会各堆一份重名示例。
-            const seedKey = `example:${example.id}`;
-            const existing = listLocalProjects().find(
-                (item) => item.seedKey === seedKey && !item.missing,
-            );
-            if (existing) {
-                const opened = await hydrateProject(existing.id);
-                if (opened) {
-                    const store = useWorkbenchStore.getState();
-                    store.setWorkspaceMode("creation");
-                    store.setCreationAssistantAutoOpen(true);
-                }
-                return;
-            }
-            // 示例同样不强迫选文件夹：走统一创建编排点（落创作区 + 带 seedKey 永不被 GC 回收），
-            // 直接在默认位置建项目，让「30 秒体验」真的一键就跑。
-            const created = await createAndOpenProject({
-                workspaceMode: "creation",
-                name: example.projectName,
-                seedKey,
-            }).catch((error) => {
-                console.error("try-now project error", error);
-                toast("新建示例项目失败，请检查本地磁盘权限", "error");
-                return null;
-            });
-            if (!created || !created.opened) return;
-            const doc = buildStoryDocument(example.story, example.projectName);
-            const store = useWorkbenchStore.getState();
-            store.setWorkbenchDocument(doc);
-            // 打开后落「创作」（mode 已由 createAndOpenProject 设好）、不自动拆镜（不偷偷耗
-            // LLM 额度、用户掌控节奏）。展开创作助手让「拆镜头」CTA 一眼可见。
-            store.setCreationAssistantAutoOpen(true);
-            // 上手引导改为常驻「上手 4 步」清单（WorkbenchShell 挂载、随真实行为打勾），
-            // 不再在此主动触发浮层引导。
-        },
-        [hydrateProject, createAndOpenProject],
-    );
-
-    // 接完模型（目录变更广播）→ 状态重查；有挂起的体验且文本模型就位 → 关面板自动续跑。
+    // 接完模型（目录变更广播）→ 状态重查，让缺模型状态条/弱入口即时翻面
+    // （面板还开着时也更新，不必等用户关面板）。
     React.useEffect(() => {
-        const handleCatalogChanged = () => {
-            refreshModelStatus();
-            if (!pendingTryExample) return;
-            void listWorkbenchModelCatalogModels({
-                kind: "text",
-                enabled: true,
-            })
-                .catch(() => [])
-                .then((models) => {
-                    if (models.length === 0) return;
-                    setPendingTryExample(null);
-                    setModelCatalogOpened(false);
-                    void tryExample(pendingTryExample);
-                });
-        };
+        const handleCatalogChanged = () => refreshModelStatus();
         window.addEventListener(
             "nomi-model-catalog-changed",
             handleCatalogChanged,
@@ -404,28 +320,10 @@ export default function NomiStudioApp(): JSX.Element {
                 "nomi-model-catalog-changed",
                 handleCatalogChanged,
             );
-    }, [pendingTryExample, refreshModelStatus, tryExample]);
-
-    // 体验流程衔接（上下文条 + 稍后再说退路）。引用随 pendingTryExample 稳定，
-    // Drawer 的「直达 wizard」effect 才不会在用户手动关掉后反复重开。
-    const experienceHandoff = React.useMemo(
-        () =>
-            pendingTryExample
-                ? {
-                      label: "30 秒体验 · 先连接一个 AI 服务，完成后自动继续",
-                      onDefer: () => {
-                          setPendingTryExample(null);
-                          setModelCatalogOpened(false);
-                      },
-                  }
-                : undefined,
-        [pendingTryExample],
-    );
+    }, [refreshModelStatus]);
 
     const closeModelCatalog = React.useCallback(() => {
         setModelCatalogOpened(false);
-        // 手动关面板 = 放弃本次体验挂起（下次点 CTA 重新进入）
-        setPendingTryExample(null);
     }, []);
 
     const deleteProject = React.useCallback(
@@ -605,7 +503,6 @@ export default function NomiStudioApp(): JSX.Element {
                     onNewProject={() => void newProject()}
                     onOpenFolder={() => void openWorkspaceFolder()}
                     onRevealProjectFolder={revealProjectFolder}
-                    onTryExample={(example) => void tryExample(example)}
                     onOpenModelCatalog={() => setModelCatalogOpened(true)}
                     onReplaySplash={() => setSplashDone(false)}
                     hasTextModel={hasTextModel}
@@ -625,7 +522,6 @@ export default function NomiStudioApp(): JSX.Element {
                     <OnboardingFloatingPanel
                         opened={modelCatalogOpened}
                         onClose={closeModelCatalog}
-                        experience={experienceHandoff}
                     />
                 </React.Suspense>
                 <ToastHost />

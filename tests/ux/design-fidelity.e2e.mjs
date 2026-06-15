@@ -60,7 +60,7 @@ try {
   // ── 起始页 v3（O2 动作卡片）：主入口层级 + 单一模型入口互斥 ──
   // 规范：docs/design/2026-06-12-start-page-onboarding-v3-spec.md §3 A 屏。
   // 显式等主入口渲染（项目列表走 IPC，固定 sleep 会赌时序 → flake）。
-  await win.locator(".tc-action-card, [data-try-now-hero-cta]").first().waitFor({ timeout: 10000 });
+  await win.locator(".tc-action-card").first().waitFor({ timeout: 10000 });
   const start = await win.evaluate(() => {
     const cards = Array.from(document.querySelectorAll(".tc-action-card"));
     const primary = cards.filter((el) => el.dataset.variant === "primary");
@@ -86,7 +86,8 @@ try {
   else console.log("  ⊘ 弱入口高度核对 — 跳过（当前为缺模型态，弱入口按规则隐藏）");
 
   // 进工作区：① 优先开示例项目；② 没示例但库里已有项目 → 开第一张项目卡（控制条等结构断言
-  // 不依赖示例内容，任意项目即可，覆盖「有项目但无该示例」的 profile）；③ 空库 → hero CTA 现造一个。
+  // 不依赖示例内容，任意项目即可，覆盖「有项目但无该示例」的 profile）；③ 空库 → 点主动作卡
+  // 「新建空白项目」现造一个（hero CTA 已删，空库经动作卡片进工作区）。
   const exampleCard = win.locator('[role="button"]', { hasText: "示例：30 秒产品介绍" }).first();
   const anyCard = win.locator('[data-project-card="true"]').first();
   if (await exampleCard.count().then((n) => n > 0).catch(() => false)) {
@@ -94,7 +95,7 @@ try {
   } else if (await anyCard.count().then((n) => n > 0).catch(() => false)) {
     await anyCard.click().catch(() => {});
   } else {
-    await win.locator("[data-try-now-hero-cta]").first().click().catch(() => {});
+    await win.locator('.tc-action-card[data-variant="primary"]').first().click().catch(() => {});
   }
   await win.waitForTimeout(2500);
   await win.getByRole("button", { name: "生成", exact: false }).first().click().catch(() => {});

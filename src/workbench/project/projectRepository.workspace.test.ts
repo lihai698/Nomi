@@ -43,7 +43,7 @@ describe('projectRepository workspace project creation', () => {
   })
 
   it('stamps seedKey onto programmatically seeded projects (idempotent example seeding, audit A8)', () => {
-    // seedKey 是播种身份：tryExample 以它判断「这个示例已播过」。名字不是身份——
+    // seedKey 是播种身份：程序化播种用它判断「这个示例已播过」。名字不是身份——
     // 此前以 projectName 重复 createLocalProject 堆出几十个重名示例项目。
     const create = vi.fn((record: unknown) => record)
     mockedGetDesktopBridge.mockReturnValue({

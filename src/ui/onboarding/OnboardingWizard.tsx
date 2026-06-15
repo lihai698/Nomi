@@ -15,7 +15,7 @@
  */
 import React from 'react'
 import { Stack, Group, Text, PasswordInput, ActionIcon, Anchor, TagsInput } from '@mantine/core'
-import { IconPlayerPlay, IconPlus, IconTrash, IconCheck, IconX } from '@tabler/icons-react'
+import { IconPlus, IconTrash, IconCheck, IconX } from '@tabler/icons-react'
 import { DesignButton, DesignModal, DesignTextInput, DesignSegmentedControl } from '../../design'
 import { getDesktopBridge } from '../../desktop/bridge'
 import type { ProviderKind } from '../../desktop/providerKind'
@@ -45,19 +45,11 @@ const PROVIDER_KIND_LABEL: Record<ProviderKind, string> = {
 
 type Phase = 'input' | 'running' | 'success' | 'error'
 
-/** 「30 秒体验」衔接：上下文条说明为什么现在要接模型、接完去哪；onDefer = 稍后再说退路。 */
-export type OnboardingExperienceHandoff = {
-  label: string
-  onDefer: () => void
-}
-
-export function OnboardingWizard({ opened, onClose, onCommitted, experience }: {
+export function OnboardingWizard({ opened, onClose, onCommitted }: {
   opened: boolean
   onClose: () => void
   /** Called once a model is committed to the catalog. */
   onCommitted?: (model: unknown) => void
-  /** 体验流程衔接（仅 30 秒体验缺模型时传入）；平时 undefined，按钮/文案恢复常态。 */
-  experience?: OnboardingExperienceHandoff
 }): JSX.Element {
   const bridge = getDesktopBridge()
   const [phase, setPhase] = React.useState<Phase>('input')
@@ -408,12 +400,6 @@ export function OnboardingWizard({ opened, onClose, onCommitted, experience }: {
       closeOnEscape={phase !== 'running'}
     >
       <Stack gap="md">
-        {experience ? (
-          <div className="flex items-center gap-2 px-3 py-2 rounded-nomi-sm bg-nomi-accent-soft text-nomi-accent text-caption font-medium" data-experience-context="true">
-            <IconPlayerPlay size={13} stroke={1.8} aria-hidden="true" />
-            {experience.label}
-          </div>
-        ) : null}
         {phase === 'input' && (
           <Stack gap={12}>
             {/* 两个入口都可见、可一键切；系统只「猜默认」。无文本模型时图片/视频置灰（读文档需先有文本模型）。 */}
@@ -609,11 +595,6 @@ export function OnboardingWizard({ opened, onClose, onCommitted, experience }: {
 
             <Group justify="space-between" align="center">
               <Group gap={8} align="center">
-                {experience ? (
-                  <DesignButton variant="subtle" onClick={experience.onDefer}>
-                    稍后再说
-                  </DesignButton>
-                ) : null}
                 <DesignButton
                   variant="subtle"
                   onClick={handleTestConnection}
@@ -656,9 +637,7 @@ export function OnboardingWizard({ opened, onClose, onCommitted, experience }: {
                   ? '仍要保存'
                   : manualSaveAction === 'confirm'
                     ? '确认保存（未验证连接）'
-                    : experience
-                      ? '保存并继续体验'
-                      : '保存'}
+                    : '保存'}
               </DesignButton>
             </Group>
               </>

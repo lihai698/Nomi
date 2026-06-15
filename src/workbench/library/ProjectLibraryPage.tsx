@@ -4,7 +4,6 @@ import { cn } from '../../utils/cn'
 import { ActionCard, NomiLogoMark, NomiWordmark } from '../../design'
 import { NomiImage } from '../../design/media'
 import type { LocalProjectSummary } from './localProjectStore'
-import { type TryNowExample } from './tryNowExamples'
 import type { ProjectTemplateId } from './projectTemplates'
 
 type Props = {
@@ -13,7 +12,6 @@ type Props = {
   onNewProject: (templateId?: ProjectTemplateId) => void
   onOpenFolder?: () => void
   onRevealProjectFolder?: (projectId: string) => void
-  onTryExample?: (example: TryNowExample) => void
   onOpenModelCatalog?: () => void
   /** 重看开屏动画（首启播完后从这里可主动重播）；缺省则不渲染重看入口 */
   onReplaySplash?: () => void
