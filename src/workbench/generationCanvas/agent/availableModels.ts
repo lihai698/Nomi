@@ -132,6 +132,32 @@ export async function resolveStoryboardImageDefault(): Promise<{ modelKey?: stri
   }
 }
 
+/**
+ * 分镜方案落画布时给镜头选的默认视频模型 + 模式（用户拍板 B-clean：有时长就是视频）。
+ * 通用解析（不硬编码 vendor 目录，P4）：偏好 Seedance → 第一个可用视频模型。镜头会连定妆卡参考
+ * （图→视频），故模式优先挑带 image_ref / first_frame 槽的 i2v（参考才喂得进），否则默认模式。
+ * 无任何可用视频模型 → 全空，镜头不带模型、用户在画布上自己选；编辑器为某镜选了模型则覆盖本默认。
+ */
+export async function resolveStoryboardVideoDefault(): Promise<{ modelKey?: string; modeId?: string }> {
+  let entries: AgentModelEntry[]
+  try {
+    entries = await listAvailableModelsForAgent()
+  } catch {
+    return {}
+  }
+  const videos = entries.filter((entry) => entry.kind === 'video')
+  if (videos.length === 0) return {}
+  const byName = (re: RegExp) =>
+    videos.find((entry) => re.test(`${entry.modelKey} ${entry.modelAlias ?? ''} ${entry.label}`))
+  const prefer = byName(/seedance/i) ?? videos[0]
+  const refMode = prefer.modes.find((m) => m.slots.some((s) => s.kind === 'image_ref' || s.kind === 'first_frame'))
+  const mode = refMode ?? prefer.modes.find((m) => m.modeId === prefer.defaultModeId) ?? prefer.modes[0]
+  return {
+    modelKey: prefer.modelKey,
+    ...(mode ? { modeId: mode.modeId } : {}),
+  }
+}
+
 /** 把可选模型清单格式化成注入 agent 系统提示词的紧凑文本。空清单返回 ''（不注入）。 */
 export function formatAvailableModelsForPrompt(entries: readonly AgentModelEntry[]): string {
   if (entries.length === 0) return "";

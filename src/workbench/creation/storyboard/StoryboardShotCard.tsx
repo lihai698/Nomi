@@ -15,6 +15,8 @@ import { DURATION_OPTIONS_SEC } from '../../generationCanvas/agent/storyboardPla
 type Props = {
   shot: PlanShot
   anchors: PlanAnchor[]
+  /** 可选视频模型清单（父组件拉一次传入）；空 → 不显模型选择器，落画布用默认视频模型兜底。 */
+  modelOptions?: { value: string; label: string }[]
   /** 这镜引用了、但锚已不存在的 id（红标 + 阻断确认）。 */
   danglingIds: string[]
   onUpdate: (patch: Partial<PlanShot>) => void
@@ -31,7 +33,7 @@ type Props = {
 }
 
 export default function StoryboardShotCard(props: Props): JSX.Element {
-  const { shot, anchors, danglingIds, onUpdate, onToggleAnchor, onRemove, promptInvalid } = props
+  const { shot, anchors, modelOptions, danglingIds, onUpdate, onToggleAnchor, onRemove, promptInvalid } = props
   const [pickerOpen, setPickerOpen] = React.useState(false)
   const byId = new Map(anchors.map((anchor) => [anchor.id, anchor]))
   const selected = shot.anchorIds.filter((id) => byId.has(id))
@@ -40,6 +42,11 @@ export default function StoryboardShotCard(props: Props): JSX.Element {
   const durationOptions = [...new Set([...DURATION_OPTIONS_SEC, shot.durationSec])]
     .sort((a, b) => a - b)
     .map((sec) => ({ value: String(sec), label: `${sec} 秒` }))
+  // 模型选择器：空值=默认（落画布用默认视频模型兜底）。选了具体模型 → 写 modelKey，清 modeId
+  // （由 buildPlannedNodeMeta 按所选模型自动取默认模式，避免把别的模型的 modeId 套错）。
+  const modelSelectOptions = modelOptions && modelOptions.length > 0
+    ? [{ value: '', label: '默认模型' }, ...modelOptions]
+    : null
 
   return (
     <div
@@ -66,6 +73,16 @@ export default function StoryboardShotCard(props: Props): JSX.Element {
           options={durationOptions}
           onChange={(value) => onUpdate({ durationSec: Number(value) })}
         />
+        {modelSelectOptions ? (
+          <NomiSelect
+            ariaLabel="视频模型"
+            leadingLabel="模型"
+            size="xs"
+            value={shot.modelKey ?? ''}
+            options={modelSelectOptions}
+            onChange={(value) => onUpdate({ modelKey: value || undefined, modeId: undefined })}
+          />
+        ) : null}
         <span className="flex-1" />
         <button
           type="button"

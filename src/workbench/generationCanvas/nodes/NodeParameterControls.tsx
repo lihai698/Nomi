@@ -38,7 +38,7 @@ import {
   readArchetypeArray,
   referenceSlotStorage,
 } from './controls/archetypeMeta'
-import { resolveReferenceSlots } from '../runner/referenceSlots'
+import { resolveReferenceSlots, decideArrayReferenceRemoval } from '../runner/referenceSlots'
 import ModeBar from './controls/ModeBar'
 import AssetReference, { type AssetSlot } from '../../assets/AssetReference'
 import type { AssetRef } from '../../assets/assetTypes'
@@ -180,19 +180,29 @@ export default function NodeParameterControls({
     setOpenSlotKey('')
   }
   const handleArrayRemove = (metaKey: string, index: number) => {
+    // 「×」按这一项的来源分流（单一真相源 decideArrayReferenceRemoval）：
+    // 来自连边 → 断边（之前只删 meta 不断边，边来源的图重渲染又被解析回来 = 「叉不掉」根因）；
+    // 来自上传 → 按 url 删 meta（显示 index 是「边+上传」合并列表的下标，不能直接拿去 filter meta 数组）。
+    const decision = decideArrayReferenceRemoval(node, nodes, edges, metaKey, index)
+    // image 数组(= character 参考)删除时，同步抹掉描述框里指向它的 @ chip（保 undo 原子性 + 一次持久化）。
+    const promptAfterRemovingMention = (url: string | null) =>
+      metaKey === 'referenceImageUrls' && url ? removeMention(node.prompt || '', url) : null
+
+    if (decision.kind === 'disconnect-edge') {
+      storeDisconnectEdge(decision.edgeId)
+      const nextPrompt = promptAfterRemovingMention(decision.url)
+      if (nextPrompt != null && nextPrompt !== (node.prompt || '')) updateNode(node.id, { prompt: nextPrompt })
+      return
+    }
+    if (decision.kind === 'noop') return
+
+    // remove-upload：按 url 从 meta 数组删（不是显示 index）。
     const latestMeta = getLatestMeta()
-    const current = readArchetypeArray(latestMeta, metaKey)
-    const removedUrl = current[index] // 必须在 filter 前取(对抗评审 must-fix:删后数组已变)
-    const next = current.filter((_, i) => i !== index)
-    // image 数组(= character 参考)删除时,同步抹掉描述框里指向它的 @ chip。
-    // meta 删除 + prompt 改写**合并成单个 updateNode**(对抗评审 must-fix:保 undo 原子性 + 一次持久化;
-    // 走与现有 meta 删除同一持久化路径,不会出现刷新后 chip 复活)。chip/@ 只服务 image 参考,其余照旧。
-    if (metaKey === 'referenceImageUrls' && removedUrl) {
-      const nextPrompt = removeMention(node.prompt || '', removedUrl)
-      if (nextPrompt !== (node.prompt || '')) {
-        updateNode(node.id, { meta: { ...latestMeta, [metaKey]: next }, prompt: nextPrompt })
-        return
-      }
+    const next = readArchetypeArray(latestMeta, metaKey).filter((u) => u !== decision.url)
+    const nextPrompt = promptAfterRemovingMention(decision.url)
+    if (nextPrompt != null && nextPrompt !== (node.prompt || '')) {
+      updateNode(node.id, { meta: { ...latestMeta, [metaKey]: next }, prompt: nextPrompt })
+      return
     }
     setArrayValue(metaKey, next)
   }

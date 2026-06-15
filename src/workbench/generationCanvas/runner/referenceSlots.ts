@@ -146,3 +146,38 @@ export function resolveReferenceSlots(
     fills: positionsBySlot[slotIndex].filter((cell): cell is ReferenceFill => cell !== null),
   }))
 }
+
+/**
+ * 数组参考槽「×」删除的来源判定（单一真相源）。
+ * 显示值 = resolveReferenceSlots 的有 url fills（边+上传合并），故删除也必须按这一项的 origin 决定：
+ * 来自边 → 断边；来自上传 → 按 url 删 meta。只删 meta 不断边 = 边来源的图重渲染又被解析回来（「叉不掉」根因）。
+ * index 是显示列表（有 url fills）的下标，不是 meta 数组下标，两者不一一对应。
+ */
+export type ArrayReferenceRemoval =
+  | { kind: 'disconnect-edge'; edgeId: string; url: string | null }
+  | { kind: 'remove-upload'; url: string }
+  | { kind: 'noop' }
+
+export function decideArrayReferenceRemoval(
+  target: GenerationCanvasNode,
+  nodes: GenerationCanvasNode[],
+  edges: GenerationCanvasEdge[],
+  metaKey: string,
+  index: number,
+): ArrayReferenceRemoval {
+  for (const rs of resolveReferenceSlots(target, nodes, edges)) {
+    const storage = referenceSlotStorage({ kind: rs.slotKind })
+    if (!storage || storage.metaKey !== metaKey) continue
+    const fill = rs.fills.filter((f) => Boolean(f.url))[index]
+    if (!fill) return { kind: 'noop' }
+    if (fill.origin.type === 'edge') {
+      const { sourceNodeId, semantic } = fill.origin
+      const edge =
+        edges.find((e) => e.source === sourceNodeId && e.target === target.id && (semantic ? e.mode === semantic : true)) ||
+        edges.find((e) => e.source === sourceNodeId && e.target === target.id)
+      return edge ? { kind: 'disconnect-edge', edgeId: edge.id, url: fill.url } : { kind: 'noop' }
+    }
+    return { kind: 'remove-upload', url: fill.url as string }
+  }
+  return { kind: 'noop' }
+}

@@ -80,34 +80,36 @@ describe('storyboardPlanToCreateNodesArgs', () => {
     expect(shotNodes.map((n) => n.title)).toEqual(['镜头 1', '镜头 2', '镜头 3'])
   })
 
-  it('镜头 → image 节点（用户拍板 image-first），无 duration params，默认图片模型可注入', () => {
+  it('镜头 → video 节点（用户拍板 B-clean），duration 写进 params，默认视频模型可注入', () => {
     const { nodes } = storyboardPlanToCreateNodesArgs(PLAN, {
       defaultImageModelKey: 'gpt-image-2',
-      defaultImageModeId: 't2i',
-      defaultImageRefModeId: 'i2i',
+      defaultVideoModelKey: 'seedance-2',
+      defaultVideoModeId: 'i2v',
     })
     const shotNodes = nodes.filter((n) => n.clientId.startsWith('shot-'))
     expect(shotNodes).toHaveLength(2)
-    // 镜1/镜2 都引用定妆卡（有参考入边）→ 图生图模式 i2i；image 节点不带 duration params。
-    expect(shotNodes[0]).toMatchObject({ clientId: 'shot-1', kind: 'image', title: '镜头 1', modelKey: 'gpt-image-2', modeId: 'i2i' })
-    expect(shotNodes[0].params).toBeUndefined()
-    expect(shotNodes[1]).toMatchObject({ clientId: 'shot-2', kind: 'image', modeId: 'i2i' })
-    expect(shotNodes[1].params).toBeUndefined()
+    // 镜头是视频节点；时长写进 duration 参数（落画布按所选模型控件钳值）。
+    expect(shotNodes[0]).toMatchObject({ clientId: 'shot-1', kind: 'video', title: '镜头 1', modelKey: 'seedance-2', modeId: 'i2v' })
+    expect(shotNodes[0].params).toEqual({ duration: 5 })
+    expect(shotNodes[1]).toMatchObject({ clientId: 'shot-2', kind: 'video', modelKey: 'seedance-2', params: { duration: 8 } })
   })
 
-  it('逐节点选模式：有参考入边（定妆卡/前镜）用图生图，无入边的首镜用文生图（GPT Image 2 i2i 槽 min:1）', () => {
+  it('用户为某镜选了模型 → 用所选模型，且不套默认模型的 modeId（防张冠李戴，由下游按所选模型取默认模式）', () => {
     const plan: StoryboardPlan = {
       title: 't',
       anchors: [],
       shots: [
-        { index: 1, durationSec: 5, anchorIds: [], prompt: '镜一' }, // 首镜无锚无前镜 → 文生图 t2i
-        { index: 2, durationSec: 5, anchorIds: [], prompt: '镜二' }, // 有前镜入边 → 图生图 i2i
+        { index: 1, durationSec: 5, anchorIds: [], prompt: '镜一', modelKey: 'kling-3', modeId: 'kling-i2v' }, // 用户选了模型+模式
+        { index: 2, durationSec: 5, anchorIds: [], prompt: '镜二', modelKey: 'kling-3' }, // 选了模型没指定模式
+        { index: 3, durationSec: 5, anchorIds: [], prompt: '镜三' }, // 没选 → 默认
       ],
     }
-    const { nodes } = storyboardPlanToCreateNodesArgs(plan, { defaultImageModeId: 't2i', defaultImageRefModeId: 'i2i' })
+    const { nodes } = storyboardPlanToCreateNodesArgs(plan, { defaultVideoModelKey: 'seedance-2', defaultVideoModeId: 'seedance-i2v' })
     const shots = nodes.filter((n) => n.clientId.startsWith('shot-'))
-    expect(shots[0].modeId).toBe('t2i') // 首镜无入边 → 纯文生
-    expect(shots[1].modeId).toBe('i2i') // 第二镜有 shot→shot 入边 → 图生图
+    expect(shots[0]).toMatchObject({ modelKey: 'kling-3', modeId: 'kling-i2v' })
+    expect(shots[1].modelKey).toBe('kling-3')
+    expect(shots[1].modeId).toBeUndefined() // 选了别的模型却没指定模式 → 不套默认模型的 modeId
+    expect(shots[2]).toMatchObject({ modelKey: 'seedance-2', modeId: 'seedance-i2v' }) // 没选 → 默认模型+默认模式
   })
 
   it('文本锚描述拼进引用它的镜头 prompt（不建边）', () => {
@@ -119,7 +121,7 @@ describe('storyboardPlanToCreateNodesArgs', () => {
     expect(shot2.prompt).toBe('林夏背起书包向楼梯走，跟拍') // 镜2 没引用 style → prompt 不变
   })
 
-  it('定妆卡 → 镜头参考边（角色 character_ref / 场景 style_ref / 道具 reference）+ shot→shot 时序链', () => {
+  it('定妆卡 → 镜头参考边（角色 character_ref / 场景 style_ref / 道具 reference）；B-clean 不连 shot→shot 链', () => {
     const { edges } = storyboardPlanToCreateNodesArgs(PLAN)
     expect(edges).toEqual([
       { sourceClientId: 'a-linxia', targetClientId: 'shot-1', mode: 'character_ref' },
@@ -127,8 +129,7 @@ describe('storyboardPlanToCreateNodesArgs', () => {
       // a-style 是文本锚 → 不连边（拼进 prompt 了）
       { sourceClientId: 'a-linxia', targetClientId: 'shot-2', mode: 'character_ref' },
       { sourceClientId: 'a-bag', targetClientId: 'shot-2', mode: 'reference' },
-      // 顺序叙事默认连 shot→shot 时序链（用户拍板 2026-06-15）
-      { sourceClientId: 'shot-1', targetClientId: 'shot-2', mode: 'reference' },
+      // B-clean：不再连 shot→shot 时序链（视频→视频会落到未实现的首帧接力；连贯靠共享定妆卡参考）
     ])
   })
 

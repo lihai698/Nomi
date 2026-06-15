@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { resolveReferenceSlots } from './referenceSlots'
+import { resolveReferenceSlots, decideArrayReferenceRemoval } from './referenceSlots'
 import type { GenerationCanvasEdge, GenerationCanvasNode } from '../model/generationCanvasTypes'
 
 function node(
@@ -125,5 +125,32 @@ describe('resolveReferenceSlots — 能力驱动单一真相源', () => {
     const edges: GenerationCanvasEdge[] = [{ id: 'e1', source: 't1', target: 'tgt', mode: 'reference' }]
     const slots = resolveReferenceSlots(tgt, [txt, tgt], edges)
     expect(slots[0].fills).toEqual([])
+  })
+})
+
+describe('decideArrayReferenceRemoval — 参考图「×」按来源分流（治「连线来的参考叉不掉」）', () => {
+  it('边来源的参考图点× → 断边（disconnect-edge），不是删 meta', () => {
+    const a = node('a', 'image', { url: 'https://cdn/edge.png' })
+    const tgt = target('video', 'kling-3.0', 'i2v', { referenceImageUrls: ['https://cdn/upload.png'] })
+    const edges: GenerationCanvasEdge[] = [{ id: 'e1', source: 'a', target: 'tgt', mode: 'first_frame' }]
+    // 显示列表 [0]=边(edge.png) [1]=上传(upload.png)
+    expect(decideArrayReferenceRemoval(tgt, [a, tgt], edges, 'referenceImageUrls', 0)).toEqual({
+      kind: 'disconnect-edge', edgeId: 'e1', url: 'https://cdn/edge.png',
+    })
+  })
+
+  it('上传来源点× → 删 meta（remove-upload，按 url 不按显示 index）', () => {
+    const a = node('a', 'image', { url: 'https://cdn/edge.png' })
+    const tgt = target('video', 'kling-3.0', 'i2v', { referenceImageUrls: ['https://cdn/upload.png'] })
+    const edges: GenerationCanvasEdge[] = [{ id: 'e1', source: 'a', target: 'tgt', mode: 'first_frame' }]
+    expect(decideArrayReferenceRemoval(tgt, [a, tgt], edges, 'referenceImageUrls', 1)).toEqual({
+      kind: 'remove-upload', url: 'https://cdn/upload.png',
+    })
+  })
+
+  it('index 越界 / 无该槽 → noop', () => {
+    const tgt = target('video', 'sora-2', 'i2v', { referenceImageUrls: ['https://cdn/up.png'] })
+    expect(decideArrayReferenceRemoval(tgt, [tgt], [], 'referenceImageUrls', 9)).toEqual({ kind: 'noop' })
+    expect(decideArrayReferenceRemoval(tgt, [tgt], [], 'notASlot', 0)).toEqual({ kind: 'noop' })
   })
 })

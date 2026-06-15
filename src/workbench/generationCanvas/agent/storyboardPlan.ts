@@ -37,12 +37,16 @@ export type PlanAnchor = {
 
 export type PlanShot = {
   index: number
-  /** 该镜时长；落画布时钳到所选模型上限（在编辑器用选择器，天然不超）。 */
+  /** 该镜时长(秒)；落画布写进视频节点 duration 参数，按所选模型控件钳值。 */
   durationSec: number
   /** 这镜用到哪些锚（按 anchor.id 引用）→ 视觉锚连参考边、文本锚拼 prompt。 */
   anchorIds: string[]
   /** 可直接生成的提示词（运镜+动作演进，不复述锚的静态描述）。 */
   prompt: string
+  /** 用户在分镜编辑器为该镜选的视频模型 catalog key；没选 → 落画布用默认视频模型兜底。 */
+  modelKey?: string
+  /** 用户为该镜选的模型模式 id（随 modelKey 一起）；没选 → 默认模式。 */
+  modeId?: string
 }
 
 export type StoryboardPlan = {
@@ -77,6 +81,8 @@ export const planShotSchema = z.object({
   durationSec: z.number(),
   anchorIds: z.array(z.string()),
   prompt: z.string(),
+  modelKey: z.string().optional(),
+  modeId: z.string().optional(),
 })
 
 export const storyboardPlanSchema = z.object({
@@ -138,12 +144,16 @@ export type PlanCreateNodesArgs = {
 }
 
 export type StoryboardPlanToArgsOptions = {
-  /** 镜头/定妆卡默认图片模型（本链路偏好 GPT Image 2，通用解析）；调用方传入，不在此硬编码目录。 */
+  /** 定妆卡/场景卡默认图片模型（偏好 GPT Image 2，通用解析）；调用方传入，不在此硬编码目录。 */
   defaultImageModelKey?: string
-  /** 默认（纯文生）模式 id：定妆卡、以及**无参考入边**的镜头用；调用方传入。 */
+  /** 定妆卡（纯文生）默认模式 id；调用方传入。 */
   defaultImageModeId?: string
-  /** 图生图（有 image_ref 槽）模式 id：**有参考入边**的镜头用（定妆卡/前镜参考才喂得进，T8）；调用方传入。 */
+  /** （图片）图生图模式 id：保留给定妆卡变体等场景；调用方传入。 */
   defaultImageRefModeId?: string
+  /** 镜头默认视频模型（用户没在编辑器为该镜选模型时兜底，通用解析偏好 Seedance）；调用方传入。 */
+  defaultVideoModelKey?: string
+  /** 镜头默认视频模式 id（优先带 image_ref/first_frame 槽的 i2v，定妆卡参考才喂得进）；调用方传入。 */
+  defaultVideoModeId?: string
 }
 
 const VISUAL_KINDS: ReadonlySet<PlanAnchorKind> = new Set(['character', 'scene', 'prop'])
@@ -221,9 +231,10 @@ function buildShotPrompt(shot: PlanShot, anchorById: Map<string, PlanAnchor>): s
 /**
  * 确认后：把方案转成 create_canvas_nodes 参数，照常走 applyCanvasToolCall 落画布
  * （复用现有建节点+连边+依赖波次「参考层先生成」，零重写）。
- * - 视觉锚（character/scene/prop）→ 卡片节点；文本锚（style 等）不建节点、描述拼进镜头 prompt。
- * - 每镜 → image 节点（用户拍板 image-first：先锁关键画面，后续再动画化）；引用的视觉锚 → 参考边；
- *   相邻镜头默认连 shot→shot 时序链（reference 视觉承接）。有参考入边的镜头用图生图模式（参考才喂得进）。
+ * - 视觉锚（character/scene/prop）→ 卡片节点（image）；文本锚（style 等）不建节点、描述拼进镜头 prompt。
+ * - 每镜 → video 节点（用户拍板 B-clean：有时长就是视频）；时长写进 duration 参数；引用的视觉锚 → 参考边。
+ *   模型：用户在编辑器为该镜选的 modelKey/modeId 优先，没选 → 默认视频模型兜底。
+ * - **不连 shot→shot 链**：视频→视频会落到尚未实现的「首帧接力抽帧」必裸跑；镜头连贯靠共享定妆卡/场景卡参考。
  */
 export function storyboardPlanToCreateNodesArgs(
   plan: StoryboardPlan,
@@ -250,41 +261,37 @@ export function storyboardPlanToCreateNodesArgs(
   // 锚已全部 push 完，此刻节点数 = 参考卡数（镜头随后 push）→ 落画布布局的角色边界。
   const anchorCount = nodes.length
 
-  // 镜头 → image 节点（用户拍板 image-first）+ 定妆卡参考边 + shot→shot 时序链。
+  // 镜头 → video 节点（用户拍板 B-clean）+ 定妆卡参考边。时长写进 duration 参数。
   // 按 shot.index 排序后再建节点（审计 A5 防御）：布局按数组顺序排格子，若 LLM 把镜头
   // 乱序吐出来，画布空间顺序就会与镜头编号错位（镜6 排在镜5 前）。这里钉死「数组序=镜序」。
   const orderedShots = [...plan.shots].sort((a, b) => a.index - b.index)
-  let prevShotId: string | null = null
   for (const shot of orderedShots) {
     const id = shotClientId(shot)
-    // 该镜引用的视觉锚（定妆卡）——连 character_ref/style_ref/reference 参考边。
+    // 该镜引用的视觉锚（定妆卡）——连 character_ref/style_ref/reference 参考边（图→视频，i2v 参考）。
     const visualAnchorIds = shot.anchorIds.filter((anchorId) => {
       const anchor = anchorById.get(anchorId)
       return Boolean(anchor) && anchor!.carrier === 'visual' && VISUAL_KINDS.has(anchor!.kind)
     })
-    // 有参考入边（定妆卡 或 前一镜）→ 图生图模式（image_ref 槽，参考才喂得进，T8）；
-    // 无任何入边 → 纯文生模式（GPT Image 2 i2i 槽 min:1，避免触发「必须≥1 张输入图」）。
-    const hasIncomingRef = visualAnchorIds.length > 0 || prevShotId !== null
-    const shotModeId =
-      hasIncomingRef && options.defaultImageRefModeId ? options.defaultImageRefModeId : options.defaultImageModeId
+    const modelKey = shot.modelKey || options.defaultVideoModelKey
+    // 用户为该镜选了具体模型 → 不套默认模型的 modeId（会张冠李戴）；留空让 buildPlannedNodeMeta
+    // 按所选模型自己取默认模式。只有用默认模型时才用默认 modeId。
+    const modeId = shot.modeId || (shot.modelKey ? undefined : options.defaultVideoModeId)
     nodes.push({
       clientId: id,
-      kind: 'image',
+      kind: 'video',
       title: `镜头 ${shot.index}`,
       prompt: buildShotPrompt(shot, anchorById),
-      ...(options.defaultImageModelKey ? { modelKey: options.defaultImageModelKey } : {}),
-      ...(shotModeId ? { modeId: shotModeId } : {}),
+      ...(modelKey ? { modelKey } : {}),
+      ...(modeId ? { modeId } : {}),
+      ...(Number.isFinite(shot.durationSec) ? { params: { duration: shot.durationSec } } : {}),
     })
     // 定妆卡 → 这一镜参考边（角色 character_ref / 场景·风格 style_ref / 道具 reference）。
     for (const anchorId of visualAnchorIds) {
       const anchor = anchorById.get(anchorId)!
       edges.push({ sourceClientId: anchorId, targetClientId: id, mode: edgeModeForAnchor(anchor.kind) })
     }
-    // 顺序叙事默认连 shot→shot 时序链（用户拍板 2026-06-15）：前一镜 → 这一镜，reference 视觉承接。
-    if (prevShotId) {
-      edges.push({ sourceClientId: prevShotId, targetClientId: id, mode: 'reference' })
-    }
-    prevShotId = id
+    // B-clean：不连 shot→shot 链（视频→视频参考会落到尚未实现的首帧接力抽帧 → 必裸跑）。
+    // 镜头连贯靠共享的定妆卡/场景卡参考（同一批镜头引用同一组锚 → 视觉一致）。
   }
 
   // 整批落「分镜」分类：角色/场景与镜头同处一个视图，参考边同屏可见可连（用户拍板 A）。

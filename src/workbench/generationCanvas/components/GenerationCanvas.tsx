@@ -11,9 +11,8 @@ import { handleCanvasStageDrop } from './canvasStageDrop'
 import type { GenerationNodeKind } from '../model/generationCanvasTypes'
 import { getGenerationNodeComponent } from '../nodes/renderRegistry'
 import { useGenerationCanvasStore } from '../store/generationCanvasStore'
-import { runGenerationNodesBatch } from '../runner/generationRunController'
 import { buildDependencyWaves } from '../runner/dependencyWaves'
-import { useBatchPlanPreviewStore } from './batchPlanPreview'
+import { runPlanWithToasts } from './batchPlanPreview'
 import { notifyModelOptionsRefresh, useModelOptionsState } from '../../../config/useModelOptions'
 import { useWorkbenchStore } from '../../workbenchStore'
 import { GroupFrameList } from './GroupFrame'
@@ -339,22 +338,15 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
     toast(`已创建「${group.name}」`, 'success')
   }, [activeCategoryId, groupSelectedNodes])
 
-  // 批量生成（从旧 CanvasToolbar 迁来——左侧栏瘦身后，这是「生成选中」的唯一入口）。
-  // 不傻批量：先算依赖波次（参考先生成→镜头后生成）。单节点无依赖直跑；多节点/有依赖弹确认条
-  // （确认前零调用零扣费，用户一眼看到先生成谁）。
+  // 批量生成（「生成选中」唯一入口）。不傻批量：先算依赖波次（参考先生成→镜头后生成）。
+  // 用户拍板「不弹窗+缺啥提示啥」：点了就直接跑能跑的（不再弹模态确认条）；上游参考没生成
+  // 而被拦下的，由 runPlanWithToasts 用人话 toast 告诉你「哪些没跑、为什么」(describeBlockedNotice)。
   const handleBatchGenerate = React.useCallback(() => {
     const ids = [...selectedNodeIds]
     if (ids.length === 0) return
     const state = useGenerationCanvasStore.getState()
     const plan = buildDependencyWaves(ids, { nodes: state.nodes, edges: state.edges })
-    if (plan.blocked.length === 0 && plan.waves.flat().length <= 1 && plan.edgesUsed.length === 0) {
-      toast('开始生成…', 'info')
-      void runGenerationNodesBatch(ids).catch((error: unknown) => {
-        toast(error instanceof Error && error.message ? error.message : '生成异常', 'error')
-      })
-      return
-    }
-    useBatchPlanPreviewStore.getState().open(plan)
+    void runPlanWithToasts(plan)
   }, [selectedNodeIds])
 
   const handleUngroupSelectedNodes = React.useCallback(() => {
@@ -687,7 +679,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
                 onPointerDown={(event) => event.stopPropagation()}
               >
                 <span className={cn('pl-1 pr-0.5 text-nomi-ink-60 text-caption whitespace-nowrap')}>{selectedCount} 个节点</span>
-                {/* 主操作：批量生成（参考先行 + 确认条）。深色 pill 带文字，是多选的首要动作。 */}
+                {/* 主操作：批量生成（参考先行，点了直接跑能跑的；缺参考的会人话提示）。深色 pill，多选首要动作。 */}
                 <button
                   type="button"
                   data-storyboard-run-all="true"
@@ -696,7 +688,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
                     'bg-nomi-ink text-nomi-paper text-body-sm hover:bg-nomi-accent',
                     'transition-colors duration-[var(--nomi-transition-fast)]',
                   )}
-                  title="生成选中节点（参考先生成、镜头后生成；确认后才扣费）"
+                  title="生成选中节点（参考先生成、镜头后生成；缺参考的会提示先生成参考卡）"
                   onClick={handleBatchGenerate}
                 >
                   <IconPlayerPlay size={15} stroke={1.8} aria-hidden />

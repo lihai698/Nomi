@@ -4,7 +4,8 @@ import { cn } from '../../../utils/cn'
 import { alertDialog, confirmDialog } from '../../../design'
 import { useWorkbenchStore } from '../../workbenchStore'
 import { applyCanvasToolCall } from '../../generationCanvas/agent/applyCanvasToolCall'
-import { resolveStoryboardImageDefault } from '../../generationCanvas/agent/availableModels'
+import { resolveStoryboardImageDefault, resolveStoryboardVideoDefault } from '../../generationCanvas/agent/availableModels'
+import { useModelOptionsState } from '../../../config/useModelOptions'
 import { storyboardPlanToCreateNodesArgs } from '../../generationCanvas/agent/storyboardPlan'
 import {
   addAnchor,
@@ -54,6 +55,8 @@ export default function StoryboardPlanEditor(): JSX.Element | null {
   const [dragIndex, setDragIndex] = React.useState<number | null>(null)
   const [overIndex, setOverIndex] = React.useState<number | null>(null)
   const [landing, setLanding] = React.useState(false)
+  // 视频模型清单拉一次，传给各镜卡的模型选择器（B-clean：分镜里就能为镜头选视频模型）。
+  const videoModelOptions = useModelOptionsState('video').options.map((o) => ({ value: o.value, label: o.label }))
 
   if (!plan) return null
 
@@ -75,14 +78,19 @@ export default function StoryboardPlanEditor(): JSX.Element | null {
     if (issues.length > 0 || landing) return
     setLanding(true)
     try {
-      // 注入默认图片模型（用户拍板 2026-06-15 image-first：偏好 GPT Image 2，通用解析）+ 两个模式：
-      // 纯文生给定妆卡/无参考镜头，图生图（有 image_ref 槽）给有参考入边的镜头（定妆卡/前镜参考才喂得进，T8）。
-      // 解析失败/无可用图片模型 → 全空，节点不带模型，用户在画布上自己选（不阻断落画布）。
-      const imageDefault = await resolveStoryboardImageDefault()
+      // 注入默认模型（用户拍板 B-clean）：定妆卡=图片模型（偏好 GPT Image 2）；镜头=视频模型
+      // （偏好 Seedance，没在编辑器为某镜选模型时兜底）。通用解析，解析失败/无可用模型 → 全空，
+      // 节点不带模型、用户在画布上自己选（不阻断落画布）。
+      const [imageDefault, videoDefault] = await Promise.all([
+        resolveStoryboardImageDefault(),
+        resolveStoryboardVideoDefault(),
+      ])
       const args = storyboardPlanToCreateNodesArgs(plan, {
         ...(imageDefault.modelKey ? { defaultImageModelKey: imageDefault.modelKey } : {}),
         ...(imageDefault.modeId ? { defaultImageModeId: imageDefault.modeId } : {}),
         ...(imageDefault.refModeId ? { defaultImageRefModeId: imageDefault.refModeId } : {}),
+        ...(videoDefault.modelKey ? { defaultVideoModelKey: videoDefault.modelKey } : {}),
+        ...(videoDefault.modeId ? { defaultVideoModeId: videoDefault.modeId } : {}),
       })
       await applyCanvasToolCall('create_canvas_nodes', args)
       // 不再即焚:方案保留、转「已落画布」、收起编辑器 → 卡片留在对话流可回看/再编辑。
@@ -177,6 +185,7 @@ export default function StoryboardPlanEditor(): JSX.Element | null {
                 key={shot.index}
                 shot={shot}
                 anchors={plan.anchors}
+                modelOptions={videoModelOptions}
                 danglingIds={danglingAnchorIdsForShot(plan, shot)}
                 promptInvalid={emptyPromptShots.has(shot.index)}
                 draggable
