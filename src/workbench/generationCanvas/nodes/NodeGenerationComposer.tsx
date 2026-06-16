@@ -148,43 +148,71 @@ export default function NodeGenerationComposer({ node, visualSize }: Props): JSX
   // 翻上时要避让的「节点上方图片编辑工具条」高度（节点坐标系 px）。否则参数框会压住那条
   // 浮动工具条（用户反馈：浮动条看不见/遮挡）。无工具条（如未生成、视频节点）则为 0。
   const [aboveClearance, setAboveClearance] = React.useState(0)
+  // 横向视口夹取（屏幕 px）：内容驱动的卡变宽后，靠画布左右边的节点会让卡溢出视口被裁（用户反馈
+  // 2026-06-16「参数遮挡/很丑」）。算出卡左右沿对 stage 视口的越界量，整体平移把它拉回视口内
+  // （卡比视口还宽时左对齐——参数从左起，优先露出左侧）。与竖向 flip 同源：都按屏幕几何避让。
+  const [shiftX, setShiftX] = React.useState(0)
   React.useLayoutEffect(() => {
     const anchor = anchorRef.current
     const stage = anchor?.closest('.generation-canvas-v2__stage')
     const nodeEl = anchor?.parentElement
     if (!anchor || !stage || !nodeEl) return
-    const stageRect = stage.getBoundingClientRect()
-    const nodeRect = nodeEl.getBoundingClientRect()
-    const neededScreenHeight = (anchor.offsetHeight || 280) + composerLayout.gap * canvasZoom
-    const spaceBelow = stageRect.bottom - nodeRect.bottom
-    const spaceAbove = nodeRect.top - stageRect.top
-    setFlipUp((prev) =>
-      prev
-        ? !(spaceBelow > neededScreenHeight + FLIP_HYSTERESIS)
-        : spaceBelow < neededScreenHeight && spaceAbove > spaceBelow,
-    )
-    // 工具条也恒定屏幕尺寸（counter-scaled）→ 实测其屏幕高换回节点坐标（/zoom）+ 它距节点的 18px。
-    const toolbarEl = nodeEl.querySelector('.generation-canvas-v2-node__panorama-toolbar')
-    const toolbarScreenH = toolbarEl ? toolbarEl.getBoundingClientRect().height : 0
-    setAboveClearance(toolbarScreenH > 0 ? toolbarScreenH / (canvasZoom || 1) + 18 : 0)
+    const recompute = () => {
+      const stageRect = stage.getBoundingClientRect()
+      const nodeRect = nodeEl.getBoundingClientRect()
+      const neededScreenHeight = (anchor.offsetHeight || 280) + composerLayout.gap * canvasZoom
+      const spaceBelow = stageRect.bottom - nodeRect.bottom
+      const spaceAbove = nodeRect.top - stageRect.top
+      setFlipUp((prev) =>
+        prev
+          ? !(spaceBelow > neededScreenHeight + FLIP_HYSTERESIS)
+          : spaceBelow < neededScreenHeight && spaceAbove > spaceBelow,
+      )
+      // 工具条也恒定屏幕尺寸（counter-scaled）→ 实测其屏幕高换回节点坐标（/zoom）+ 它距节点的 18px。
+      const toolbarEl = nodeEl.querySelector('.generation-canvas-v2-node__panorama-toolbar')
+      const toolbarScreenH = toolbarEl ? toolbarEl.getBoundingClientRect().height : 0
+      setAboveClearance(toolbarScreenH > 0 ? toolbarScreenH / (canvasZoom || 1) + 18 : 0)
+      // 横向夹取：卡净 scale=1（画布 scale(zoom)×卡 counter-scale(1/zoom)）→ 屏幕宽 = offsetWidth。
+      // 默认锚在节点中心（left-1/2 + translateX(-50%)）。算越界，整体平移回视口内。
+      const MARGIN = 12
+      const cardScreenW = anchor.offsetWidth
+      const centerX = nodeRect.left + nodeRect.width / 2
+      const wouldLeft = centerX - cardScreenW / 2
+      const wouldRight = centerX + cardScreenW / 2
+      const minLeft = stageRect.left + MARGIN
+      const maxRight = stageRect.right - MARGIN
+      let next = 0
+      if (wouldRight > maxRight) next = maxRight - wouldRight // 右溢出 → 左移（负）
+      if (wouldLeft + next < minLeft) next = minLeft - wouldLeft // 左溢出（或比视口宽）→ 左对齐
+      setShiftX(Math.round(next))
+    }
+    recompute()
+    // 卡宽随模型/参数变（model 切换不在下方 deps 里）→ ResizeObserver 兜住宽度变化重算横向夹取。
+    const ro = new ResizeObserver(recompute)
+    ro.observe(anchor)
+    return () => ro.disconnect()
   }, [canvasZoom, canvasOffset, node.position?.x, node.position?.y, visualSize.width, visualSize.height, composerLayout.gap, node.result?.url])
 
   // 卡宽 = **内容驱动**（用户拍板 2026-06-16，推翻 06-13 的「按最宽模型恒定宽」）：
-  // 卡片 w-fit 跟着**当前模型**的参数横排自然撑开——参数少则窄、多则宽，永远一行不换（InlineParameterBar
-  // flex-nowrap），生成钮 ml-auto 永远贴卡片右边。不再「所有节点都按最宽候选模型撑宽、参数少也一堆空白」，
-  // 也不再「封顶 560 换两行」。下限 min-w-[360] 保提示词可写。（离屏测量器 NodeComposerWidthMeasurer 随之删除。）
+  // 卡片 **w-max**（max-content）跟着当前模型的「底栏一行」(锁+参数横排+生成钮)自然撑开——参数少则窄、
+  // 多则宽，永远一行不换（InlineParameterBar flex-nowrap），生成钮 ml-auto 贴右。
+  // **为什么不能用 w-fit**：composer 是 absolute + left-1/2 锚在节点上，fit-content 的可用宽被节点框
+  // (~300px) 卡死 → 塌回 min-content(min-w-360)、参数多就被挤截断（实测 2026-06-16 真机：card 卡 360）。
+  // max-content 不吃可用宽约束，按内容真实宽长开。提示词/参考区用 w-0 min-w-full **只填不撑**(贡献 0 到
+  // max-content，长 prompt 在卡宽内换行，不把卡撑爆)。max-w 兜底防极端。（离屏测量器已删，纯 CSS。）
 
   return (
-    // 外层只做定位锚（不裁剪），宽度跟随内层卡（w-fit 包住确定宽度的卡，便于 -translate-x-1/2 居中）。
+    // 外层只做定位锚（不裁剪），宽度跟随内层卡（w-max 包住按内容长开的卡，便于 -translate-x-1/2 居中）。
     <div
       ref={anchorRef}
-      className={cn('generation-canvas-v2-node__composer', 'absolute left-1/2 z-[8] w-fit')}
+      className={cn('generation-canvas-v2-node__composer', 'absolute left-1/2 z-[8] w-max')}
       data-flipped={flipUp ? 'true' : 'false'}
       style={{
         // 用户反馈③：反向缩放抵消画布 scale(zoom) → 面板恒定屏幕尺寸（缩小画布只缩上面的卡片框，
         // 不缩这个参数框）。横向居中的 -translate-x-1/2 改写进 transform（否则被 scale 覆盖）。
         // transform-origin 贴住与节点相连的那条边（默认朝下=顶边、翻上=底边），缩放时锚点不漂移。
-        transform: `translateX(-50%) scale(${1 / (canvasZoom || 1)})`,
+        // 最左的 translateX(shiftX px) 在屏幕空间生效（不被 scale 缩）→ 横向夹取把溢出视口的宽卡拉回。
+        transform: `translateX(${shiftX}px) translateX(-50%) scale(${1 / (canvasZoom || 1)})`,
         transformOrigin: flipUp ? 'bottom center' : 'top center',
         ...(flipUp
           ? { bottom: `calc(100% + ${composerLayout.gap + aboveClearance}px)` }
@@ -196,8 +224,10 @@ export default function NodeGenerationComposer({ node, visualSize }: Props): JSX
       <div
         className={cn(
           'generation-canvas-v2-node__composer-card',
-          'flex flex-col gap-2.5 p-3 min-h-[150px] min-w-[360px] w-fit',
-          // 宽度内容驱动（w-fit）：跟当前模型参数横排一行自然撑开，参数少则窄、多则宽，不塌不爆、不换行。
+          'flex flex-col gap-2.5 p-3 min-h-[150px] min-w-[360px] max-w-[880px] w-max',
+          // 宽度内容驱动（w-max）：按底栏一行(锁+参数+生成钮)的真实宽长开，参数少则窄、多则宽，不塌不爆、不换行。
+          // max-w-[880px] 兜底：现有最宽是 apimart Seedance 7 控件(model+变体+比例+清晰度+时长+seed+生成音频)
+          // ≈810px，880 留头不触发截断；纯防极端（防 omni 模式参考槽行等异常撑爆）。实测 2026-06-16 校准。
           'border border-nomi-line rounded-nomi bg-nomi-paper overflow-hidden shadow-nomi-md',
           'transition-[outline-color] duration-150',
           isDragOver && 'outline-2 outline-dashed outline-nomi-accent outline-offset-[-2px]',
@@ -238,7 +268,8 @@ export default function NodeGenerationComposer({ node, visualSize }: Props): JSX
       {/* 提示词至少 3 行高（min-h-[72px]）——参考区/底栏再多也不把它挤成 1 行（修③）；超长时本区滚动。 */}
       {/* 转写模式无台词输入（音频参考即输入）——隐藏 prompt，避免误导。 */}
       {audioIsTranscribe ? null : (
-        <div className={cn('flex-1 min-h-[72px] overflow-auto')}>
+        // w-0 min-w-full：填满卡宽但**贡献 0** 到 max-content（长 prompt 在卡宽内换行，不把卡撑爆 → 卡宽由底栏定）。
+        <div className={cn('flex-1 min-h-[72px] overflow-auto w-0 min-w-full')}>
           <PromptEditor
             className={cn('min-h-[72px]')}
             value={node.prompt || ''}
