@@ -19,9 +19,11 @@ export function completeNodeConnection(targetNodeId: string): void {
     if (kind) {
       const outcome = addAssetUrlToNode(targetNodeId, kind, resultPreviewUrl(source))
       if (outcome.status !== 'no-slot') {
-        // 是数组参考目标：meta-only，绝不落边。
+        // 是数组参考目标：meta-only，绝不落边。**成功也要给反馈**——否则用户看到「没连线但图上去了」
+        // 会以为连线失败（真机反馈）：明确告诉它「这是加参考、不画线、已生效」。
         if (outcome.status === 'empty') showInfoToast('请先生成该节点，再连线为参考')
         else if (outcome.status === 'full') showInfoToast(`最多 ${outcome.max} 个${outcome.label}`)
+        else showInfoToast('已作为参考图添加（不画连线，参考已生效）')
         state.cancelConnection()
         return
       }
