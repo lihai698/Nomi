@@ -18,11 +18,22 @@
 ### 1c. 对账静默放过（三口径不收敛）
 `agent/reconcile.ts:88-113` 只遍历 agent 计划的边，**不扫描手动拖线产生的「无边有图」meta-only 状态** → 静默放过。
 
-### #4 可灵 i2v 图没进请求体 —— 静态全通，待真实请求体
-键名四环一致、构造层 meta 路径单测过、边+meta 双路汇入 image_urls、**本地化顺序也正确**（runtime.ts:473-485 先 localize extras 再从 localized extras 构建 params）、resultPreviewUrl 返回 result.url。**所有静态路径都说 image_urls 应该有可达图**。剩两种运行时原因静态看不出：① 源 URL 是 blob:/未本地化形态被 vendor 当空；② vendor 字段结构不符。**必须抓真实请求体**（见 `docs/handoff/2026-06-16-kling-i2v-reference-lost.md`）。
+### #4 可灵 i2v 图没进请求体 —— ✅ 已钉死并修（2026-06-16）
+真机捕获请求体证明**传输完全正确**（image_urls 带图正常发可灵）。根因 = **全代码 URL 提取优先级不一致**（即 1b）：显示读 providerUrl 优先，但生成侧 `collectNodeContext` 和写 meta 的 `resultPreviewUrl` **都不读 providerUrl** → 只有 providerUrl 无 result.url 的图（很多生成图就这形态）显示得出、生成兜不到 → image_urls 空 → 纯文生出无关内容。已修（commit 9770e79，两处统一 providerUrl 优先 + 回归测试），0.10.7。详见 memory `url-priority-inconsistency-ref-lost`。
 
-### 地基修法（让这类不再复发）
-完成 **S3**：让 `generationNodeExecutor`/`buildArchetypeInputParams` 直接消费 `resolveReferenceSlots` 的 fills（含 origin/pending），删 `resolveGenerationReferences` 的独立边解析；对账同步断言「fills 里每个 edge-origin 都有真实 edge」（治 1c）。+ 拖线到数组槽时**也建边**（治 1a，显示=边=生成统一）。
+### 1d.「为什么数组参考不连线」根因（钉死，2026-06-16 用户追问）
+代码注释说「数组绝不变持久边、否则崩 (target,mode) 唯一性」——**这理由是错的/过时的**：`model/graphOps.ts:80 connectNodes` 去重按 **(source,target,mode)**，同目标连多个**不同源**本来就允许、不撞唯一性。
+**真实原因 = 顺序**：`image_ref` 数组槽 `characterIndexed`（types.ts:39），按序对应 prompt 的 character1/2/3（缩略图 ①②③）；而 `GenerationCanvasEdge`（generationCanvasTypes.ts:190）只有 `{id,source,target,mode}`、**无 order 字段** = 无序集合。N 张图连成 N 条边 → 丢「谁是 character1」。所以数组存有序 meta（不画线），单帧槽（无序问题）才画线。
+- 当前的 toast「已作为参考图添加」(completeNodeConnection.ts) **是权宜**，绕症状不碰根。
+
+### 地基修法（让这类不再复发）★= 用户排第 3 的「参考真相源收口」，含「让数组也连线」
+正解一举三得（连线视觉对 + 显示/生成收口 + #4 整类不复发）：
+1. **边加 `order` 字段**（generationCanvasTypes.ts GenerationCanvasEdge）→ 数组参考也能用**有序的边**表达（保住 character1..N 顺序）。
+2. **拖线到数组槽改成建有序边**（completeNodeConnection.ts 去掉 meta-only 早退 + cancelConnection；删权宜 toast，P1）→ 线画出来、显示=数据一致。
+3. **生成收口到边**：`generationNodeExecutor`/`buildArchetypeInputParams` 直接消费 `resolveReferenceSlots` 的有序 fills（含 origin），删 `resolveGenerationReferences` 的独立边解析（治整类分裂）。
+4. **对账**断言「fills 里每个 edge-origin 都有真实 edge」（治 1c）。
+5. **迁移**：旧项目 meta.referenceImageUrls 有序数组 → 建成对应有序边（别丢已存参考）。
+6. 排期：等 Seedance 变体合并 subagent 落地合 main 后做（两大地基重构不并行，都碰参考系统会 merge 打架）。先出 R8 样张「多图参考连线带 ①②③」。
 
 ## 二、apimart 全模型参数完整性（对官方文档，16 个模型）
 
