@@ -46,7 +46,9 @@ export function collectNodeContext(
   const promptParts = [...upstream, target].filter(Boolean).map((item) => item?.prompt || '').filter(Boolean)
   const references = [...new Set([...upstream, target].flatMap((item) => item?.references || []))]
   const resultUrls = upstream
-    .map((item) => item.result?.url || item.result?.thumbnailUrl || '')
+    // URL 优先级与显示侧 referenceUrl.resultUrl 一致：**优先 providerUrl（公网 CDN）**。否则只有 providerUrl
+    // 无 result.url 的上游图会被生成侧静默丢（显示有、生成兜不到）→ image_urls 空 → 纯文生（#4 根因）。
+    .map((item) => item.result?.providerUrl || item.result?.url || item.result?.thumbnailUrl || '')
     .filter(Boolean)
 
   return {

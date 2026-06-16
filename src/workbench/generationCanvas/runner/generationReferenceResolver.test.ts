@@ -44,3 +44,19 @@ describe('resolveGenerationReferences — T5 尾帧接力分流', () => {
     expect(refs.firstFrameUrl).toBe('nomi-local://asset/p/frame.png')
   })
 })
+
+describe('resolveGenerationReferences — URL 优先级一致（#4 根因：providerUrl 图生成侧不能丢）', () => {
+  // 只有 providerUrl（公网 CDN）、无 result.url 的上游图（很多生成图就是这形态）：
+  // 显示侧（referenceUrl.resultUrl）读 providerUrl 能显示；生成侧若不读 providerUrl 会静默丢 →
+  // image_urls 空 → 模型纯文生出无关内容。修后 collectNodeContext 也优先 providerUrl，两侧一致。
+  it('源图只有 providerUrl（无 result.url）→ 经任意边进 referenceImages（不再静默丢）', () => {
+    const img = {
+      id: 'img1', kind: 'image', title: 'img1', prompt: '', x: 0, y: 0, width: 100, height: 100,
+      result: { type: 'image', providerUrl: 'https://cdn/provider-only.png' },
+    } as unknown as GenerationCanvasNode
+    const video = node('v1', 'video')
+    const edge = { id: 'e1', source: 'img1', target: 'v1', mode: 'reference' } as unknown as GenerationCanvasEdge
+    const refs = resolveGenerationReferences(video, { nodes: [img, video], edges: [edge] })
+    expect(refs.referenceImages).toContain('https://cdn/provider-only.png')
+  })
+})

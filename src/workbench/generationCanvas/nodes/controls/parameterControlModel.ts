@@ -184,7 +184,10 @@ function readDefaultParam(meta: unknown, key: string): string {
 }
 
 export function resultPreviewUrl(node: GenerationCanvasNode | undefined): string {
-  return String(node?.result?.url || node?.result?.thumbnailUrl || node?.history?.[0]?.url || node?.history?.[0]?.thumbnailUrl || '').trim()
+  // URL 优先级必须与显示侧 referenceUrl.resultUrl 一致：**优先 providerUrl（原始公网 CDN）**。
+  // 否则「只有 providerUrl 无 result.url」的图（很多生成图就是）显示得出、但拖入参考/生成兜不到 →
+  // image_urls 空 → 模型纯文生出无关内容（#4 可灵 i2v 根因）。
+  return String(node?.result?.providerUrl || node?.result?.url || node?.result?.thumbnailUrl || node?.history?.[0]?.providerUrl || node?.history?.[0]?.url || node?.history?.[0]?.thumbnailUrl || '').trim()
 }
 
 export function assetUrl(asset: WorkbenchAssetDto): string {
