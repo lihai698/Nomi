@@ -114,7 +114,7 @@ export default function InlineParameterBar({
     )
   }
   return (
-    <div className={cn('generation-canvas-v2-node__params--parameters', 'flex flex-wrap items-center gap-2 gap-y-1.5')}>
+    <div className={cn('generation-canvas-v2-node__params--parameters', 'flex flex-nowrap items-center gap-2')}>
       <NomiSelect
         ariaLabel="模型"
         placeholder="选择模型"

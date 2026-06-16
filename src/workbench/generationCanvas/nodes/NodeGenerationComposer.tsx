@@ -11,8 +11,7 @@ import { collectUngeneratedReferenceAncestors } from '../runner/referenceAncesto
 import { buildDependencyWaves } from '../runner/dependencyWaves'
 import { useBatchPlanPreviewStore } from '../components/batchPlanPreview'
 import NodeParameterControls from './NodeParameterControls'
-import NodeComposerWidthMeasurer from './NodeComposerWidthMeasurer'
-import { GENERATE_BUTTON_CLASS, CARD_HORIZONTAL_PADDING } from './nodeComposerStyles'
+import { GENERATE_BUTTON_CLASS } from './nodeComposerStyles'
 import { NodeLockBadge } from './NodeLockBadge'
 import { useNodeAssetDrop } from './useNodeAssetDrop'
 import { persistActiveWorkbenchProjectNow } from '../../project/workbenchProjectSession'
@@ -170,20 +169,10 @@ export default function NodeGenerationComposer({ node, visualSize }: Props): JSX
     setAboveClearance(toolbarScreenH > 0 ? toolbarScreenH / (canvasZoom || 1) + 18 : 0)
   }, [canvasZoom, canvasOffset, node.position?.x, node.position?.y, visualSize.width, visualSize.height, composerLayout.gap, node.result?.url])
 
-  // 卡宽 = 该节点**所有候选模型里最宽的那个底栏**的宽度（恒定）——用户拍板 2026-06-13：
-  // 以最长模型的宽度作为恒定卡宽。换模型时参数行内容变，但卡宽不变 → 生成钮锁死右下角、不再
-  // 跟着参数横排左右跳；最宽档保证任何模型的参数都一行放得下、不需横向滚动。
-  // 测量交给离屏组件 NodeComposerWidthMeasurer（渲染每个模型的 footer 副本取 max），这里只收宽度。
-  const [widestFooterWidth, setWidestFooterWidth] = React.useState<number | undefined>(undefined)
-  const handleWidestFooter = React.useCallback((px: number) => {
-    setWidestFooterWidth((prev) => (prev === px ? prev : px))
-  }, [])
-  // 下限 360 保证提示词可写；+padding 还原成卡宽。未测出前 undefined → 走 min-w-[360] 兜底。
-  // 上限 560（用户真机反馈"太太太宽"）：恒定卡宽防生成钮跳动仍保留，但封住「某个宽候选模型把所有
-  // composer 撑到一行 1500+px」——超界的参数行改为换行（InlineParameterBar flex-wrap），不再横向爆宽。
-  const cardWidth = widestFooterWidth != null
-    ? Math.max(360, Math.min(560, widestFooterWidth + CARD_HORIZONTAL_PADDING))
-    : undefined
+  // 卡宽 = **内容驱动**（用户拍板 2026-06-16，推翻 06-13 的「按最宽模型恒定宽」）：
+  // 卡片 w-fit 跟着**当前模型**的参数横排自然撑开——参数少则窄、多则宽，永远一行不换（InlineParameterBar
+  // flex-nowrap），生成钮 ml-auto 永远贴卡片右边。不再「所有节点都按最宽候选模型撑宽、参数少也一堆空白」，
+  // 也不再「封顶 560 换两行」。下限 min-w-[360] 保提示词可写。（离屏测量器 NodeComposerWidthMeasurer 随之删除。）
 
   return (
     // 外层只做定位锚（不裁剪），宽度跟随内层卡（w-fit 包住确定宽度的卡，便于 -translate-x-1/2 居中）。
@@ -207,13 +196,13 @@ export default function NodeGenerationComposer({ node, visualSize }: Props): JSX
       <div
         className={cn(
           'generation-canvas-v2-node__composer-card',
-          'flex flex-col gap-2.5 p-3 min-h-[150px] min-w-[360px]',
-          // 宽度由 cardWidth（实测参数行宽度）确定 → 参数横排一行全显示、要多宽给多宽，且 tile/提示词不塌不爆。
+          'flex flex-col gap-2.5 p-3 min-h-[150px] min-w-[360px] w-fit',
+          // 宽度内容驱动（w-fit）：跟当前模型参数横排一行自然撑开，参数少则窄、多则宽，不塌不爆、不换行。
           'border border-nomi-line rounded-nomi bg-nomi-paper overflow-hidden shadow-nomi-md',
           'transition-[outline-color] duration-150',
           isDragOver && 'outline-2 outline-dashed outline-nomi-accent outline-offset-[-2px]',
         )}
-        style={{ maxHeight: composerLayout.maxHeight, ...(cardWidth ? { width: cardWidth } : {}) }}
+        style={{ maxHeight: composerLayout.maxHeight }}
       >
       {/* 参考区：图像/视频的参考槽，以及声音的「配音生成/转写」模式切换 + 转写的音频参考槽。 */}
       {isImageLikeGenerationNodeKind(node.kind) || isVideoLikeGenerationNodeKind(node.kind) || isAudioKind ? (
@@ -299,8 +288,6 @@ export default function NodeGenerationComposer({ node, visualSize }: Props): JSX
         })()}
       </div>
       </div>
-      {/* 离屏测量所有候选模型的底栏宽度 → 取最宽作为恒定卡宽（position:absolute 隐藏，不影响可见布局）。 */}
-      <NodeComposerWidthMeasurer node={node} onWidest={handleWidestFooter} />
       {isDragOver ? (
         <div
           className={cn(
