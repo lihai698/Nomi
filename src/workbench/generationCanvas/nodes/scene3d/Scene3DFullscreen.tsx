@@ -11,21 +11,13 @@ import {
 } from '@react-three/drei'
 import {
   IconArrowsMove,
-  IconBox,
-  IconBulb,
   IconCamera,
   IconCube,
-  IconCylinder,
   IconEye,
   IconListTree,
-  IconMaximize,
-  IconMinimize,
   IconPhoto,
-  IconPlane,
-  IconPlus,
   IconRotate,
   IconSettings,
-  IconSphere,
   IconWorld,
   IconX,
 } from '@tabler/icons-react'
