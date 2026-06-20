@@ -575,6 +575,32 @@ export function importModelCatalogPackage(payload: unknown): unknown {
   return { imported: { vendors, models, mappings }, errors: [] };
 }
 
+export type CatalogMutation = {
+  upsertVendor: (payload: unknown) => Vendor;
+  upsertApiKey: (vendorKey: string, payload: unknown) => void;
+  upsertModel: (payload: unknown) => Model;
+  upsertMapping: (payload: unknown) => Mapping;
+};
+
+/**
+ * 单次「读-改-写」事务（P2·根治多步落盘留半截）：读一份内存 state，把 apply* 暴露给 fn 在其上
+ * 攒齐，fn 正常返回才一次性 writeCatalog；fn 抛错则整体不写（磁盘保持原样）。与
+ * importModelCatalogPackage 共用同一套「全有或全无」边界——单条手动接入（commitOnboardedModelToCatalog
+ * 的 vendor+key+model+mapping 四步）复用它，不再四次独立落盘、不再留「vendor 写了 model 没写成」的半接入空壳。
+ */
+export function mutateCatalog<T>(fn: (tx: CatalogMutation) => T): T {
+  const state = readCatalog();
+  const tx: CatalogMutation = {
+    upsertVendor: (payload) => applyVendorUpsert(state, payload),
+    upsertApiKey: (vendorKey, payload) => applyApiKeyUpsert(state, vendorKey, payload),
+    upsertModel: (payload) => applyModelUpsert(state, payload),
+    upsertMapping: (payload) => applyMappingUpsert(state, payload),
+  };
+  const result = fn(tx);
+  writeCatalog(state);
+  return result;
+}
+
 /**
  * Read user-supplied custom request headers off a vendor. Stored under
  * `vendor.meta.extraHeaders` (a string→string map) by the manual-entry form so

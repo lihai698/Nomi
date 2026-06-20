@@ -5,12 +5,9 @@ import { guessModelKind } from "./modelKindHeuristic";
 import { hardenedFetchText } from "../hardenedFetch";
 import type { AiSdkProviderKind, BillingModelKind, HttpOperation, Model, ProfileKind, Vendor } from "./types";
 import {
+  mutateCatalog,
   normalizeProviderKind,
   readCatalog,
-  upsertModelCatalogMapping,
-  upsertModelCatalogModel,
-  upsertModelCatalogVendor,
-  upsertModelCatalogVendorApiKey,
 } from "./catalogStore";
 // 回引 runtime 的任务执行引擎（testModelCatalogMapping 复用）；调用都在函数体内（运行期），
 // CommonJS 循环引用安全（runtime ↔ catalogCommit 仅函数体互引，无加载期互调）。
@@ -111,24 +108,7 @@ export function commitOnboardedModelToCatalog(payload: {
   const auth = (draft.vendorAuth || {}) as JsonRecord;
   const authType = (auth.type as Vendor["authType"]) || "bearer";
 
-  // 1. vendor — carry draft.vendorMeta through so the manual-entry form's custom
-  // request headers (vendorMeta.extraHeaders) persist and reach buildAiSdkModel.
-  upsertModelCatalogVendor({
-    key: vendorKey,
-    name: vendorName,
-    baseUrlHint: vendorBaseUrl,
-    authType,
-    authHeader: auth.headerName || null,
-    authQueryParam: auth.queryParam || null,
-    providerKind: draft.vendorProviderKind || "openai-compatible",
-    enabled: true,
-    ...(draft.vendorMeta !== undefined ? { meta: draft.vendorMeta } : {}),
-  });
-
-  // 2. apiKey (auto-encrypted by upsert)
-  upsertModelCatalogVendorApiKey(vendorKey, { apiKey: userApiKey, enabled: true });
-
-  // 3. model + onboarding evidence snapshot
+  // onboarding evidence 快照 + meta.parameters 投影（纯计算，先备好，再进事务）。
   type OnboardingField = NonNullable<Model["onboarding"]>["fields"][number];
   const onboardingFields: OnboardingField[] = Array.isArray(draft.modelFields)
     ? (draft.modelFields as JsonRecord[]).map((f) => ({
@@ -155,44 +135,68 @@ export function commitOnboardedModelToCatalog(payload: {
     ...(f.default !== undefined ? { default: f.default } : {}),
   }));
 
-  const model = upsertModelCatalogModel({
-    modelKey,
-    vendorKey,
-    modelAlias: modelKey,
-    labelZh: modelDisplayName,
-    kind: billingKind,
-    enabled: true,
-    meta: { parameters: metaParameters },
-    onboarding: {
-      addedVia: payload.addedVia ?? "agent",
-      trialId: String(outcome.trialId || ""),
-      docsUrl: String(outcome.docsUrl || ""),
-      addedAt: nowIso(),
-      fields: onboardingFields,
-    },
-  });
-
-  // 4. mapping: one row per (vendor, taskKind), carrying both stages.
+  // mapping: one row per (vendor, taskKind), carrying both stages.
+  // Reconcile: the agent only templatizes params it saw in the curl example,
+  // so spec-derived params (resolution, duration, ...) the user can now select
+  // on the node have no {{request.params.*}} slot in the body and would send
+  // nothing. Inject the missing field keys at the param nesting level.
   const mappingCreate = draft.mappingCreate as HttpOperation | undefined;
   const mappingQuery = draft.mappingQuery as HttpOperation | undefined;
-  if (mappingCreate) {
-    // Reconcile: the agent only templatizes params it saw in the curl example,
-    // so spec-derived params (resolution, duration, ...) the user can now select
-    // on the node have no {{request.params.*}} slot in the body and would send
-    // nothing. Inject the missing field keys at the param nesting level.
-    const reconciledCreate: HttpOperation =
-      mappingCreate.body !== undefined && onboardingFields.length > 0
-        ? { ...mappingCreate, body: mergeMissingParamsIntoBody(mappingCreate.body, onboardingFields.map((f) => f.key)) }
-        : mappingCreate;
-    upsertModelCatalogMapping({
-      vendorKey,
-      taskKind,
-      name: modelDisplayName,
+  const reconciledCreate: HttpOperation | undefined = mappingCreate
+    ? mappingCreate.body !== undefined && onboardingFields.length > 0
+      ? { ...mappingCreate, body: mergeMissingParamsIntoBody(mappingCreate.body, onboardingFields.map((f) => f.key)) }
+      : mappingCreate
+    : undefined;
+
+  // 单次事务（P2·根治半截接入）：vendor + apiKey + model + mapping 在一份内存 state 上攒齐，
+  // 全部成功才一次性落盘；任一步抛错则整体不写，绝不留「vendor 写了 model 没写成」的不可用空壳。
+  // 与 importModelCatalogPackage 同构（共用 apply* 纯函数）。
+  const model = mutateCatalog((tx) => {
+    // 1. vendor — carry draft.vendorMeta through so the manual-entry form's custom
+    // request headers (vendorMeta.extraHeaders) persist and reach buildAiSdkModel.
+    tx.upsertVendor({
+      key: vendorKey,
+      name: vendorName,
+      baseUrlHint: vendorBaseUrl,
+      authType,
+      authHeader: auth.headerName || null,
+      authQueryParam: auth.queryParam || null,
+      providerKind: draft.vendorProviderKind || "openai-compatible",
       enabled: true,
-      create: reconciledCreate,
-      ...(mappingQuery ? { query: mappingQuery } : {}),
+      ...(draft.vendorMeta !== undefined ? { meta: draft.vendorMeta } : {}),
     });
-  }
+    // 2. apiKey (auto-encrypted by upsert)
+    tx.upsertApiKey(vendorKey, { apiKey: userApiKey, enabled: true });
+    // 3. model + onboarding evidence snapshot
+    const committed = tx.upsertModel({
+      modelKey,
+      vendorKey,
+      modelAlias: modelKey,
+      labelZh: modelDisplayName,
+      kind: billingKind,
+      enabled: true,
+      meta: { parameters: metaParameters },
+      onboarding: {
+        addedVia: payload.addedVia ?? "agent",
+        trialId: String(outcome.trialId || ""),
+        docsUrl: String(outcome.docsUrl || ""),
+        addedAt: nowIso(),
+        fields: onboardingFields,
+      },
+    });
+    // 4. mapping
+    if (reconciledCreate) {
+      tx.upsertMapping({
+        vendorKey,
+        taskKind,
+        name: modelDisplayName,
+        enabled: true,
+        create: reconciledCreate,
+        ...(mappingQuery ? { query: mappingQuery } : {}),
+      });
+    }
+    return committed;
+  });
 
   return model;
 }

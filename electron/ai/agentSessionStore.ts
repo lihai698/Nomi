@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { CoreMessage } from "ai";
 import { resolveWorkspaceProjectDir } from "../workspace/workspaceRepository";
+import { writeJsonFileAtomic } from "../jsonFile";
 import { getSettingsRoot, getWorkspaceRepositoryDeps } from "../runtimePaths";
 import { projectIdFromSessionKey } from "../events/eventLogRepository";
 
@@ -64,11 +65,10 @@ function readSessions(file: string): Record<string, CoreMessage[]> {
 
 function writeSessions(file: string, sessions: Record<string, CoreMessage[]>): void {
   try {
-    fs.mkdirSync(path.dirname(file), { recursive: true });
+    // 收口到共享原子原语（唯一 temp 名 + fsync）：同项目两 area 并发 save 不再抢同一个 `.tmp`
+    // 互相截断（旧实现固定 `${file}.tmp`），且 fsync 后崩溃/掉电不会留空文件（P1 不留更弱的第二份写法）。
     const payload: PersistedAgentSessions = { version: SESSION_FILE_VERSION, sessions };
-    const tmp = `${file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(payload), "utf8");
-    fs.renameSync(tmp, file);
+    writeJsonFileAtomic(file, payload);
   } catch {
     // 工作缓存,丢了下次重新攒,不打断当前对话
   }
