@@ -28,11 +28,11 @@ import { useTidyCanvas } from './useTidyCanvas'
 import {
   centerNodeOffset,
   clampNumber,
-  createInitialViewport,
   getCanvasGroupBoxes,
   getNodeSize,
   getSelectedBounds,
 } from './generationCanvasGeometry'
+import { useCanvasViewport } from './useCanvasViewport'
 import { GENERATION_DEFAULT_BASE_URL, GENERATION_PROVIDER, readProviderSetting, writeProviderSettings } from '../services/providerSettings'
 import CanvasEdgeLayer, { type ActiveEdge } from './CanvasEdgeLayer'
 import '../styles/generationCanvas.css'
@@ -110,77 +110,23 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
   const videoModelOptions = videoModelOptionsState.options
   const modelOptionsStatusMessage = imageModelOptionsState.statusMessage || videoModelOptionsState.statusMessage
 
-  // Pan/zoom state
-  const initialViewport = React.useMemo(() => createInitialViewport(), [])
-  const rememberCategoryViewport = useWorkbenchStore((state) => state.rememberCategoryViewport)
-  const categoryViewports = useWorkbenchStore((state) => state.categoryViewports)
-  // Phase E3: each graph-canvas category preserves its own zoom + offset
-  const seedViewport = React.useMemo(() => {
-    const remembered = categoryViewports[activeCategoryId]
-    return remembered || initialViewport
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategoryId])
-  const [viewport, setViewport] = React.useState(() => ({
-    zoom: seedViewport.zoom,
-    offset: seedViewport.offset,
-  }))
-  const zoom = viewport.zoom
-  const offset = viewport.offset
-  const lastCategoryRef = React.useRef(activeCategoryId)
-  React.useEffect(() => {
-    if (lastCategoryRef.current === activeCategoryId) return
-    rememberCategoryViewport(lastCategoryRef.current, { zoom, offset }) // save outgoing
-    const next = categoryViewports[activeCategoryId] || initialViewport // load incoming
-    setViewport({ zoom: next.zoom, offset: next.offset })
-    lastCategoryRef.current = activeCategoryId
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeCategoryId])
-  const stageRef = React.useRef<HTMLDivElement>(null)
-  // E8 P0 G1: viewport-aware virtualization.
-  // When node count exceeds the threshold, we filter the render list to only
-  // nodes whose bounding box intersects the visible viewport (in canvas coords)
-  // expanded by VIRTUALIZATION_BUFFER_PX on every side. Below the threshold
-  // we keep current behavior (render every node) so small projects pay zero
-  // overhead.
-  const VIRTUALIZATION_THRESHOLD = 50
-  const VIRTUALIZATION_BUFFER_PX = 400
-  const [stageSize, setStageSize] = React.useState<{ width: number; height: number }>({ width: 0, height: 0 })
-  React.useEffect(() => {
-    const el = stageRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
-    const update = () => setStageSize({ width: el.clientWidth, height: el.clientHeight })
-    update()
-    const ro = new ResizeObserver(update)
-    ro.observe(el)
-    return () => ro.disconnect()
-  }, [])
-  const visibleNodesForRender = React.useMemo(() => {
-    if (nodes.length <= VIRTUALIZATION_THRESHOLD || stageSize.width === 0 || stageSize.height === 0) {
-      return nodes
-    }
-    // Compute viewport in canvas coordinates
-    const z = zoom || 1
-    const viewLeft = -offset.x / z - VIRTUALIZATION_BUFFER_PX
-    const viewTop = -offset.y / z - VIRTUALIZATION_BUFFER_PX
-    const viewRight = viewLeft + stageSize.width / z + VIRTUALIZATION_BUFFER_PX * 2
-    const viewBottom = viewTop + stageSize.height / z + VIRTUALIZATION_BUFFER_PX * 2
-    return nodes.filter((node) => {
-      const nx = node.position.x
-      const ny = node.position.y
-      const { width: nw, height: nh } = getNodeSize(node)
-      // AABB intersection test
-      return nx + nw >= viewLeft && nx <= viewRight && ny + nh >= viewTop && ny <= viewBottom
-    })
-  }, [nodes, zoom, offset, stageSize])
+  // Pan/zoom + 视口虚拟化收口到 useCanvasViewport（壳组件顶死 800 行，抽出腾 headroom）。
+  const {
+    categoryViewports,
+    setViewport,
+    zoom,
+    offset,
+    stageRef,
+    stageSize,
+    visibleNodesForRender,
+    visibleEdgeNodeIds,
+    offsetRef,
+    zoomRef,
+    stageSizeRef,
+  } = useCanvasViewport(activeCategoryId, nodes)
   // 出现动画：只让**新落点**节点弹入（add/paste/Agent），开项目时已有节点不齐闪（实现见 hook）。
   const appearNodeIds = useNodeAppearTracking(allNodes)
   const { isTidying, tidy } = useTidyCanvas(activeCategoryId)
-  // B3 边层视口裁剪：仅在虚拟化生效时给边层一个可见节点集，剔除两端都在视口外的边；
-  // 未虚拟化（小图）传 null = 渲染全部边，行为与改动前逐字一致。
-  const visibleEdgeNodeIds = React.useMemo(
-    () => (nodes.length > VIRTUALIZATION_THRESHOLD ? new Set(visibleNodesForRender.map((node) => node.id)) : null),
-    [nodes.length, visibleNodesForRender],
-  )
   const [contextNodeMenu, setContextNodeMenu] = React.useState<{
     stageX: number
     stageY: number
@@ -202,15 +148,9 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
     setActiveEdge(null)
   }, [activeEdgeId, edges])
 
-  // Refs so drag-connection effect can read latest values without re-subscribing
-  const offsetRef = React.useRef(offset)
-  offsetRef.current = offset
-  const zoomRef = React.useRef(zoom)
-  zoomRef.current = zoom
+  // allNodes 的最新值给 drag-connection 等效应读（offset/zoom/stageSize 的 ref 由 useCanvasViewport 提供）。
   const allNodesRef = React.useRef(allNodes)
   allNodesRef.current = allNodes
-  const stageSizeRef = React.useRef(stageSize)
-  stageSizeRef.current = stageSize
 
   const pointer = useCanvasPointerInteractions({
     readOnly,
@@ -273,7 +213,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
       setFocusFlashNodeId((current) => (current === pendingFocusNodeId ? null : current))
       focusFlashTimerRef.current = null
     }, 1400)
-  }, [activeCategoryId, allNodes, animateViewportTo, categoryViewports, pendingFocusNodeId])
+  }, [activeCategoryId, allNodes, animateViewportTo, categoryViewports, pendingFocusNodeId, stageSizeRef, zoomRef])
 
   React.useEffect(() => {
     if (readOnly) return undefined
@@ -305,7 +245,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
       window.removeEventListener('pointerup', handleUp)
       window.removeEventListener('blur', handleUp)
     }
-  }, [commitPersistedChange, moveGroupNodes, readOnly])
+  }, [commitPersistedChange, moveGroupNodes, readOnly, zoomRef])
 
   // Keep the store viewport in sync so nodes can read the same zoom/pan model.
   React.useEffect(() => {
@@ -433,7 +373,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
       x: (clientX - rect.left - offsetRef.current.x) / zoomRef.current,
       y: (clientY - rect.top - offsetRef.current.y) / zoomRef.current,
     }
-  }, [])
+  }, [offsetRef, stageRef, zoomRef])
 
   const handleStageContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     if (readOnly || !stageRef.current) return
@@ -493,7 +433,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
     }
     if (animate) animateViewportTo(nextZoom, nextOffset, 200)
     else setViewportTransform(nextZoom, nextOffset)
-  }, [animateViewportTo, nodes, setViewportTransform])
+  }, [animateViewportTo, nodes, setViewportTransform, stageRef])
 
   // 项目/分类首次加载时自动适应视图（含「历史视口框不住任何节点」的自愈式适应，
   // 防止图都在视口外、用户误以为「图消失」）。逻辑抽到 useAutoFitOnLoad（防巨壳）。
@@ -527,7 +467,7 @@ export default function GenerationCanvas({ readOnly = false }: GenerationCanvasP
         y: Math.round((viewportAnchor.y - offset.y) / zoom),
       }
     },
-    [offset.x, offset.y, zoom],
+    [offset.x, offset.y, zoom, stageRef],
   )
 
   const zoomPercent = Math.round(zoom * 100)
