@@ -52,9 +52,26 @@ import { VendorRequestError, encodeVendorErrorMessage } from "./vendor/vendorHtt
 import { traceVendorCompleted } from "./events/vendorCallTrace";
 import { registerOnboardingIpc } from "./ai/onboarding/onboardingIpc";
 import { registerUpdaterIpc } from "./update/autoUpdater";
+import { startCapabilityCore, stopCapabilityCore, setOpenProjectId } from "./capabilityCore/appIntegration";
 
 // 尽早安装：捕获引导阶段起的 uncaughtException / unhandledRejection，落盘到 app logs（P0-8）。
 installCrashHandlers();
+
+// 单实例锁（能力核前提，docs/plan/2026-06-20）：保证同一 user-data 只有一个 app 实例 = 工程文件的
+// 唯一写者，外部 CLI/MCP 才能安全地「app 开着走 RPC、关着走 headless」。隔离实例（eval/promo 用独立
+// --user-data-dir）拿到的是各自的锁，不受影响。拿不到锁 = 已有实例在跑 → 让出（聚焦老窗后退出）。
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    const [existing] = BrowserWindow.getAllWindows();
+    if (existing) {
+      if (existing.isMinimized()) existing.restore();
+      existing.focus();
+    }
+  });
+}
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -304,6 +321,9 @@ function registerIpc(): void {
   registerExportJobIpc();
   ipcMain.handle("nomi:tasks:run", (_event, payload) => runTaskIpcGuard(payload, () => runTask(payload)));
   ipcMain.handle("nomi:tasks:result", (_event, payload) => runTaskIpcGuard(payload, () => fetchTaskResult(payload)));
+  // 能力核 A/B 守卫：renderer 在打开/切换/关闭项目时上报当前打开的 projectId，
+  // 让外部调用拒绝直写「正在窗口里编辑」的工程（防内存 store 回盘覆盖，见 capabilityCore/rpcServer）。
+  ipcMain.on("nomi:capability:active-project", (_event, projectId: unknown) => setOpenProjectId(String(projectId || "")));
   registerAgentChatV2Ipc();
   registerTextStreamIpc();
   registerConversationsIpc();
@@ -338,7 +358,8 @@ function registerLocalProtocol(): void {
   });
 }
 
-app.whenReady().then(async () => {
+// 非主实例（没拿到单实例锁）不启动 UI / RPC——已让出给老实例（second-instance 已聚焦它）。
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
   registerLocalProtocol();
   // 启动即探测系统/环境代理并应用到全局 fetch，让"测试连接/调 AI API/拉模型"能穿透代理。
   // 失败只记日志、不抛——绝不拖垮启动。须在任何出站请求前完成。
@@ -350,6 +371,9 @@ app.whenReady().then(async () => {
     console.error("[nomi:desktop] ensureBuiltinModelSeeds failed:", error);
   }
   registerIpc();
+  // 能力核对外口（RPC + 实例广告）：让外部 Claude Code/Codex 经 CLI/MCP 在本地驱动 Nomi。
+  // fail-open：内部不抛，绝不影响 app 启动。
+  await startCapabilityCore(runTask);
   await createWindow();
 
   app.on("activate", () => {
@@ -371,6 +395,8 @@ app.on("window-all-closed", () => {
 // 退出时中止所有在跑导出，否则 ffmpeg 子进程会变孤儿（继续占 CPU/写文件，直到自己跑完）。
 // abort → ffmpegRunner 监听 abort 后 kill 子进程。同步、不抛，绝不拖住退出。
 app.on("before-quit", () => {
+  // 能力核退出清理：清实例广告 + 关 RPC，让外部探测立刻知道「app 已关」。同步、不抛。
+  stopCapabilityCore();
   try {
     const aborted = abortAllActiveExports();
     if (aborted > 0) console.log(`[nomi:desktop] aborted ${aborted} in-flight export(s) on quit`);

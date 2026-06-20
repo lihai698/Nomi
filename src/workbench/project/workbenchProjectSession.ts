@@ -90,6 +90,9 @@ let activeWorkbenchProjectSaveTarget: ActiveWorkbenchProjectSaveTarget | null = 
 
 export function setActiveWorkbenchProjectSaveTarget(target: ActiveWorkbenchProjectSaveTarget | null): void {
   activeWorkbenchProjectSaveTarget = target
+  // 能力核 A/B 守卫：把「当前窗口打开的项目」上报主进程——外部 CLI/MCP 据此拒绝直写正在编辑的工程
+  // （防内存 store 防抖回盘覆盖外部改动）。可选口（老 preload 无 capability 即 no-op）。
+  getDesktopBridge()?.capability?.setActiveProject(target?.projectId ?? '')
 }
 
 export function clearActiveWorkbenchProjectSaveTarget(projectId?: string): void {

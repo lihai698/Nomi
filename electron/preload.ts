@@ -188,4 +188,8 @@ contextBridge.exposeInMainWorld("nomiDesktop", {
     exportPackage: (dirName: string) => invokeSync("nomi:skill:export", dirName),
     importPackage: (payload: unknown) => invokeSync("nomi:skill:import", payload),
   },
+  // 能力核：上报当前窗口打开的项目，供外部调用的 A/B 守卫（防外部直写正在编辑的工程）。
+  capability: {
+    setActiveProject: (projectId: string) => ipcRenderer.send("nomi:capability:active-project", projectId),
+  },
 });

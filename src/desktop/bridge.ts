@@ -260,6 +260,10 @@ export type DesktopBridge = {
     exportPackage: (dirName: string) => unknown
     importPackage: (payload: unknown) => unknown
   }
+  /** 能力核：上报当前打开项目，供外部调用的 A/B 守卫（可选——老 preload 无此口）。 */
+  capability?: {
+    setActiveProject: (projectId: string) => void
+  }
 }
 
 declare global {

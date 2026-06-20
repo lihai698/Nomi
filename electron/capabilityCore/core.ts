@@ -1,0 +1,243 @@
+// 能力核 · 编排层（见 docs/plan/2026-06-20-capability-core-headless-exposure.md）。
+//
+// 把纯图操作（canvasGraph）接到真实的工程持久化（projects/repository）与生成引擎（runtime.runTask）。
+// 这是「外部 agent / CLI / MCP 驱动 Nomi」的**主进程**单一执行口——所有传输（RPC / 头less host）
+// 都调这里，不各自实现一遍（P1）。
+//
+// 模式说明：本文件实现 **B 模式**（app 关着，直接读写 project.json）。当 app 开着时，
+// 工程的内存 store 才是真相、会防抖回盘覆盖文件改动（见 workbenchProjectSession），故 app 开着时
+// 图变更必须经运行中实例（A 模式，rpcServer 转发给 renderer），不能在此直写文件。调用方（rpcServer/
+// host）负责按「app 是否开着」选模式；本核只管把 B 模式做对、做纯。
+//
+// 真相源（P1）：generate 不重建 archetype→body——runTask 主进程内部据 catalog mapping + extras
+// 自己组装请求体（findExecutableModel / requestPipeline / 资产本地化）。本核只构造高层 TaskRequest。
+import { listProjects, readProject, saveProject, createProject, type ProjectRecord } from '../projects/repository'
+import { readCatalog } from '../catalog/catalogStore'
+import {
+  addNodes,
+  connectNodes,
+  deleteNodes,
+  normalizeSnapshot,
+  readCanvas,
+  setNodePrompt,
+  type CanvasSnapshot,
+  type ConnectionSpec,
+  type NodeSpec,
+} from './canvasGraph'
+
+/** 生成意图（粗粒度）→ 默认 ProfileKind。调用方也可显式传 kind 覆盖。 */
+export type GenerateIntent = 'image' | 'video' | 'text' | 'audio'
+
+type TaskResultLike = {
+  id?: string
+  status?: string
+  // 字段宽容：runtime.TaskResult 的可空字段（string | null）也吃，避免传输边界处理 null
+  assets?: Array<{
+    type?: string
+    url?: string
+    thumbnailUrl?: string | null
+    providerUrl?: string | null
+    assetId?: string | null
+    text?: string | null
+  }>
+  raw?: unknown
+}
+
+/** runTask 的形状（注入式，便于单测构造请求体而不真打 vendor）。 */
+export type RunTaskFn = (payload: { vendor: string; request: unknown }) => Promise<TaskResultLike>
+
+function defaultKindForIntent(intent: GenerateIntent, hasReferences: boolean): string {
+  switch (intent) {
+    case 'image':
+      return 'text_to_image'
+    case 'video':
+      return hasReferences ? 'image_to_video' : 'text_to_video'
+    case 'audio':
+      return 'text_to_audio'
+    default:
+      return 'chat'
+  }
+}
+
+/** 读取项目的画布快照（normalize 后），坏/缺数据降级为空。 */
+function readProjectSnapshot(record: ProjectRecord): CanvasSnapshot {
+  const payload = (record.payload && typeof record.payload === 'object' ? (record.payload as Record<string, unknown>) : {}) as Record<string, unknown>
+  return normalizeSnapshot(payload.generationCanvas)
+}
+
+/** 把改好的快照写回 record.payload.generationCanvas，其余 payload 字段原样保留（不碰 timeline 等）。 */
+function writeProjectSnapshot(record: ProjectRecord, snapshot: CanvasSnapshot): ProjectRecord {
+  const payload = (record.payload && typeof record.payload === 'object' ? { ...(record.payload as Record<string, unknown>) } : {}) as Record<string, unknown>
+  payload.generationCanvas = snapshot
+  return { ...record, payload }
+}
+
+function mustReadProject(projectId: string): ProjectRecord {
+  const record = readProject(projectId)
+  if (!record) throw new Error(`项目不存在: ${projectId}`)
+  return record
+}
+
+// ── 工程级 ─────────────────────────────────────────────────────────────
+
+export function listAllProjects(): Array<{ id: string; name: string; updatedAt: number }> {
+  return listProjects().map((project) => ({ id: project.id, name: project.name, updatedAt: project.updatedAt }))
+}
+
+export function createNamedProject(name?: string): { id: string; name: string } {
+  const record = createProject(name ? { name } : {})
+  return { id: record.id, name: record.name }
+}
+
+/** 列出 catalog 里可执行的模型（enabled），供外部 agent 选型。 */
+export function listAvailableModels(): Array<{ vendor: string; vendorName: string; modelKey: string; kind: string; label: string }> {
+  const state = readCatalog()
+  const vendorName = new Map(state.vendors.map((vendor) => [vendor.key, vendor.name] as const))
+  return state.models
+    .filter((model) => model.enabled)
+    .map((model) => ({
+      vendor: model.vendorKey,
+      vendorName: vendorName.get(model.vendorKey) || model.vendorKey,
+      modelKey: model.modelKey,
+      kind: model.kind,
+      label: model.labelZh || model.modelKey,
+    }))
+}
+
+// ── 画布级（B 模式：直写 project.json）──────────────────────────────────
+
+export function readProjectCanvas(projectId: string): ReturnType<typeof readCanvas> {
+  return readCanvas(readProjectSnapshot(mustReadProject(projectId)))
+}
+
+export function addProjectNodes(projectId: string, specs: NodeSpec[]): { ids: string[] } {
+  const record = mustReadProject(projectId)
+  const { snapshot, ids } = addNodes(readProjectSnapshot(record), specs)
+  saveProject(projectId, writeProjectSnapshot(record, snapshot))
+  return { ids }
+}
+
+export function connectProjectNodes(projectId: string, connections: ConnectionSpec[]): {
+  edgeIds: string[]
+  skipped: Array<{ connection: ConnectionSpec; reason: string }>
+} {
+  const record = mustReadProject(projectId)
+  const result = connectNodes(readProjectSnapshot(record), connections)
+  saveProject(projectId, writeProjectSnapshot(record, result.snapshot))
+  return { edgeIds: result.edgeIds, skipped: result.skipped }
+}
+
+export function setProjectNodePrompt(projectId: string, nodeId: string, prompt: string, title?: string): { changed: boolean } {
+  const record = mustReadProject(projectId)
+  const { snapshot, changed } = setNodePrompt(readProjectSnapshot(record), nodeId, prompt, title)
+  if (changed) saveProject(projectId, writeProjectSnapshot(record, snapshot))
+  return { changed }
+}
+
+export function deleteProjectNodes(projectId: string, nodeIds: string[]): { deleted: string[] } {
+  const record = mustReadProject(projectId)
+  const { snapshot, deleted } = deleteNodes(readProjectSnapshot(record), nodeIds)
+  if (deleted.length) saveProject(projectId, writeProjectSnapshot(record, snapshot))
+  return { deleted }
+}
+
+// ── 生成（复用主进程 runtime.runTask；B 模式落结果回节点）─────────────────
+
+export type GenerateInput = {
+  projectId: string
+  /** 既有节点 id；不给则用 prompt 新建一个节点再生成。 */
+  nodeId?: string
+  /** 新建节点时的提示词；既有节点不给则用节点现有 prompt。 */
+  prompt?: string
+  intent?: GenerateIntent
+  /** 显式 ProfileKind（如 text_to_image）；不给则由 intent 推。 */
+  kind?: string
+  vendor: string
+  modelKey: string
+  /** 透传进 extras 的生成参数（width/height/seed/duration…），主进程 archetypeInput 映射。 */
+  params?: Record<string, unknown>
+  /** 参考图（公网 URL 或 nomi-local://），落进 extras.referenceImages。 */
+  references?: string[]
+  title?: string
+}
+
+/**
+ * 触发一次生成。构造高层 TaskRequest → runTask（主进程组装请求体 + 发 vendor + 轮询 + 落资产）→
+ * 把结果写回节点 result/history。runTask 注入式（测试不真打 vendor）。
+ *
+ * 注意（诚实交付）：真实 vendor 调用花用户额度，需真机 + 真 key 端到端验证才算「接通」（接入即验证
+ * 铁律）；本函数保证请求**构造正确**与结果落盘，不替代真实 E2E。
+ */
+export async function generateOnProject(input: GenerateInput, runTaskFn: RunTaskFn): Promise<{
+  nodeId: string
+  status: string
+  assets: TaskResultLike['assets']
+}> {
+  const record = mustReadProject(input.projectId)
+  let snapshot = readProjectSnapshot(record)
+
+  // 解析/新建目标节点
+  let nodeId = input.nodeId || ''
+  const intent = input.intent || 'image'
+  if (!nodeId) {
+    const nodeKind = intent === 'video' ? 'video' : intent === 'audio' ? 'audio' : intent === 'text' ? 'text' : 'image'
+    const created = addNodes(snapshot, [{ kind: nodeKind, prompt: input.prompt, title: input.title, references: input.references }])
+    snapshot = created.snapshot
+    nodeId = created.ids[0]
+  } else if (typeof input.prompt === 'string' && input.prompt.trim()) {
+    const updated = setNodePrompt(snapshot, nodeId, input.prompt, input.title)
+    snapshot = updated.snapshot
+  }
+
+  const node = snapshot.nodes.find((item) => item.id === nodeId)
+  if (!node) throw new Error(`节点不存在: ${nodeId}`)
+  const prompt = typeof node.prompt === 'string' ? node.prompt.trim() : ''
+  if (!prompt && intent !== 'audio') throw new Error('prompt is required')
+
+  const references = input.references && input.references.length ? input.references : (Array.isArray(node.references) ? node.references : [])
+  const kind = input.kind || defaultKindForIntent(intent, references.length > 0)
+
+  const request = {
+    kind,
+    prompt,
+    extras: {
+      ...(input.params || {}),
+      modelKey: input.modelKey,
+      modelAlias: input.modelKey,
+      projectId: input.projectId,
+      nodeId,
+      nodeKind: node.kind,
+      ...(references.length ? { referenceImages: references } : {}),
+    },
+  }
+
+  const result = await runTaskFn({ vendor: input.vendor, request })
+
+  // 落结果回节点（首资产 → result，便于 renderer 载入即见）。失败也保存 prompt/节点。
+  const primary = (result.assets || [])[0]
+  const persisted = snapshot.nodes.map((item) =>
+    item.id === nodeId
+      ? {
+          ...item,
+          status: result.status === 'succeeded' ? 'success' : result.status === 'failed' ? 'error' : item.status,
+          ...(primary
+            ? {
+                result: {
+                  id: result.id || `result-${nodeId}`,
+                  type: intent === 'video' ? 'video' : intent === 'audio' ? 'audio' : intent === 'text' ? 'text' : 'image',
+                  url: primary.url,
+                  thumbnailUrl: primary.thumbnailUrl,
+                  providerUrl: primary.providerUrl,
+                  text: primary.text,
+                  assetId: primary.assetId,
+                  createdAt: Date.now(),
+                },
+              }
+            : {}),
+        }
+      : item,
+  )
+  saveProject(input.projectId, writeProjectSnapshot(record, { ...snapshot, nodes: persisted }))
+
+  return { nodeId, status: result.status || 'unknown', assets: result.assets || [] }
+}
