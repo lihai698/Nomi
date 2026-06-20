@@ -53,6 +53,7 @@
 | 文件 | 一句话 | 状态 |
 |---|---|---|
 | [2026-06-09-agent-harness-architecture.md](2026-06-09-agent-harness-architecture.md) | **Agent Harness 架构定义与演进** — 本簇主文档 | 📋 |
+| [2026-06-21-self-improving-harness-loop.md](2026-06-21-self-improving-harness-loop.md) | **自我改进 harness 闭环**：AI 扮用户跑测试→量化诊断→修→重跑；架构铁律=查agent≠修agent(治自偏)；指标分三层(客观脊梁/半客观校准/主观人锚)；扩现有评测体系；不训模型/不碰GPU | 📋 |
 | [2026-06-10-nomi-harness-requirements.md](2026-06-10-nomi-harness-requirements.md) | Harness 需求真相源 | 📋 |
 | [2026-06-10-nomi-harness-framework-research.md](2026-06-10-nomi-harness-framework-research.md) | Harness 框架选型调研（三路并行 agent） | 📋 |
 | [2026-06-10-nomi-harness-teardown-reference-pool.md](2026-06-10-nomi-harness-teardown-reference-pool.md) | Harness 拆解+参考池定稿 | 📋 |
