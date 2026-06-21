@@ -58,6 +58,8 @@
     "@ai-sdk/openai-compatible": "^0.2.16",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@ffprobe-installer/ffprobe": "^2.1.2",
+    "@fontsource-variable/fraunces": "^5.2.9",
+    "@fontsource-variable/inter": "^5.2.8",
     "@mantine/core": "^7.13.1",
     "@mantine/modals": "^7.13.1",
     "@mantine/notifications": "^7.13.1",

@@ -30,7 +30,7 @@
   border-radius: 0 !important;
   border-color: transparent !important;
   box-shadow: none !important;
-  background: var(--tc-color-surface-inline) !important;
+  background: var(--nomi-ink-05) !important;
 }
 
 /* ===== Mantine: Button variant overrides ===== */

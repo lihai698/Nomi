@@ -1,85 +1,13 @@
+/* Light-only（设计系统 §1 锁定原则）。早期暗色 tc 层与 handle-color 层已删（§14.1 S1/S2/S4）：
+   app 由 main.tsx forceColorScheme 永远 light，那套暗色默认 + 光模式覆盖块全是死重量；
+   外部仅 2 处消费已迁回 nomi 体系（vendor-overrides 的 surface-inline、animations 的 sheen）。
+   颜色/圆角/字号真相源在 nomi-tokens.css，别再往这里加 tc 前缀变量（见设计系统 §0.5 三层 token）。 */
 :root {
-  color-scheme: light dark;
-  --tc-radius-sharp: 0px;
-  --tc-radius-field: 6px;
-  --tc-radius-panel: 10px;
-  --tc-radius-modal: 14px;
-  --tc-radius-pill: 999px;
-  --tc-space-1: 4px;
-  --tc-space-2: 8px;
-  --tc-space-3: 12px;
-  --tc-space-4: 16px;
-  --tc-space-5: 20px;
-  --tc-space-6: 24px;
-  --tc-font-size-micro: 11px;
-  --tc-font-size-body: 14px;
-  --tc-font-size-body-sm: 13px;
-  --tc-font-size-caption: 12px;
-  --tc-font-size-title: 16px;
-  --tc-font-size-h2: 20px;
-  --tc-font-size-h1: 24px;
-  --tc-font-size-display: 28px;
-  /* 连线句柄热区：越大越容易误触；适当收紧以提升精确度 */
+  color-scheme: light;
+  /* 连线句柄热区几何（canvas 连线命中区，与配色无关，保留） */
   --handle-hit-outside: 20px;
   --handle-hit-inside: 8px;
   --handle-hit-vertical: 18px;
-  --handle-color-image: #7dd3fc;
-  --handle-color-audio: #34d399;
-  --handle-color-subtitle: #facc15;
-  --handle-color-video: #c084fc;
-  --handle-color-character: #f472b6;
-  --handle-color-any: #94a3b8;
-  --handle-surface: rgba(4, 7, 18, 0.88);
-  --handle-border: rgba(255, 255, 255, 0.42);
-
-  --tc-snap-outline: rgba(147, 197, 253, 0.55);
-  --tc-snap-shadow: 0 0 0 3px rgba(147, 197, 253, 0.7), 0 0 30px rgba(147, 197, 253, 0.35);
-
-  --tc-gen-overlay-bg: rgba(255, 255, 255, 0.07);
-  --tc-gen-overlay-border: rgba(255, 255, 255, 0.10);
-  --tc-gen-overlay-sheen: rgba(255, 255, 255, 0.28);
-  --tc-gen-overlay-body-from: rgba(0, 0, 0, 0.35);
-  --tc-gen-overlay-body-to: rgba(0, 0, 0, 0.05);
-  --tc-gen-overlay-text: rgba(255, 255, 255, 0.85);
-  --tc-color-app-bg: #05070b;
-  --tc-color-app-bg-strong: #020409;
-  --tc-color-surface: #0b0f14;
-  --tc-color-surface-raised: #10161d;
-  --tc-color-surface-subtle: #131a22;
-  --tc-color-surface-inline: rgba(255, 255, 255, 0.035);
-  --tc-color-surface-inline-weak: rgba(255, 255, 255, 0.03);
-  --tc-color-border-subtle: rgba(226, 232, 240, 0.08);
-  --tc-color-border-strong: rgba(125, 211, 252, 0.24);
-  --tc-color-text-primary: #edf3ff;
-  --tc-color-text-secondary: #aab7ca;
-  --tc-color-text-tertiary: #73839a;
-  --tc-color-accent-blue: #60a5fa;
-  --tc-color-accent-cyan: #22d3ee;
-  --tc-color-success: #34d399;
-  --tc-color-warning: #fbbf24;
-  --tc-color-danger: #f87171;
-  --tc-color-info: #38bdf8;
-}
-
-:root[data-mantine-color-scheme="light"] {
-  --handle-color-image: #2563eb;
-  --handle-color-audio: #0d9488;
-  --handle-color-subtitle: #ca8a04;
-  --handle-color-video: #7c3aed;
-  --handle-color-character: #db2777;
-  --handle-color-any: #475569;
-  --handle-surface: rgba(255, 255, 255, 0.96);
-  --handle-border: rgba(15, 23, 42, 0.2);
-
-  --tc-snap-outline: rgba(37, 99, 235, 0.22);
-  --tc-snap-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18), 0 0 26px rgba(37, 99, 235, 0.12);
-
-  --tc-gen-overlay-bg: rgba(15, 23, 42, 0.05);
-  --tc-gen-overlay-border: rgba(15, 23, 42, 0.10);
-  --tc-gen-overlay-sheen: rgba(15, 23, 42, 0.10);
-  --tc-gen-overlay-body-from: rgba(255, 255, 255, 0.85);
-  --tc-gen-overlay-body-to: rgba(255, 255, 255, 0.35);
-  --tc-gen-overlay-text: rgba(15, 23, 42, 0.72);
 }
 
 * {
@@ -89,22 +17,9 @@
 body {
   margin: 0;
   min-height: 100%;
-  font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background-color: var(--tc-color-app-bg);
-  background-image:
-    radial-gradient(circle at 18% 14%, rgba(34,211,238,0.07), transparent 32%),
-    radial-gradient(circle at 82% 0%, rgba(96,165,250,0.06), transparent 28%),
-    linear-gradient(180deg, var(--tc-color-app-bg-strong) 0%, var(--tc-color-app-bg) 52%, #06090f 100%);
-  color: var(--mantine-color-text, var(--tc-color-text-primary));
-}
-
-:root[data-mantine-color-scheme="light"] body {
-  background-color: #f7f9ff;
-  background-image:
-    radial-gradient(circle at 10% 15%, rgba(59,130,246,0.12), transparent 55%),
-    radial-gradient(circle at 85% -5%, rgba(14,165,233,0.12), transparent 45%),
-    linear-gradient(180deg, #f7f9ff 0%, #ecf2ff 55%, #e4ebfb 100%);
-  color: var(--mantine-color-text, #111321);
+  font-family: var(--nomi-font-sans);
+  background: var(--nomi-bg);
+  color: var(--nomi-ink);
 }
 
 html,
@@ -123,23 +38,6 @@ body {
 #root {
   position: relative;
   isolation: isolate;
-}
-
-#root::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background-image:
-    linear-gradient(120deg, rgba(255,255,255,0.026) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(255,255,255,0.026) 1px, transparent 1px);
-  background-size: 60px 60px;
-  opacity: 0.08;
-  z-index: -1;
-}
-
-:root[data-mantine-color-scheme="light"] #root::before {
-  opacity: 0.08;
 }
 
 .nomi-loading-mark__logo {

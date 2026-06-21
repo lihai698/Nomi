@@ -26,7 +26,7 @@
 .tc-task-node__gen-overlay-sheen {
   position: absolute;
   inset: -80px;
-  background: linear-gradient(90deg, transparent, var(--tc-gen-overlay-sheen), transparent);
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--nomi-ink) 10%, transparent), transparent);
   @apply animate-sheen motion-reduce:animate-none;
 }
 
