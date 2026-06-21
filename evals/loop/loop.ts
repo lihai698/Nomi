@@ -8,7 +8,7 @@ import { baselineDefaults, cloneDefaults, type LearnedDefaults } from "./learned
 import { diagnose } from "./diagnose";
 import { fix } from "./fix";
 import { diagnoseLLM, fixLLM, loopLlmMode } from "./llmAgents";
-import { closeApp } from "./llmViaApp.mjs";
+import { closeApp } from "./appBridge.mjs";
 
 const TARGET = "semantic-edge-correctness";
 const EPS = 0.01;

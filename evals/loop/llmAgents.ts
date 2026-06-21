@@ -8,7 +8,7 @@ import type { Row } from "./metrics";
 import type { Diagnosis } from "./diagnose";
 import type { LearnedDefaults } from "./learnedDefaults";
 import { cloneDefaults } from "./learnedDefaults";
-import { chatViaApp, loopAppLlmAvailable, configuredModelLabel } from "./llmViaApp.mjs";
+import { chatText, textAvailable, modelLabels } from "./appBridge.mjs";
 
 function envConfigured(): boolean {
   return !!(
@@ -18,14 +18,14 @@ function envConfigured(): boolean {
   );
 }
 function appConfigured(): boolean {
-  return process.env.NOMI_LOOP_USE_APP_LLM === "1" && loopAppLlmAvailable();
+  return process.env.NOMI_LOOP_USE_APP_LLM === "1" && textAvailable();
 }
 export function loopLlmEnabled(): boolean {
   return envConfigured() || appConfigured();
 }
 export function loopLlmMode(): string {
   if (envConfigured()) return `env(${process.env.NOMI_LOOP_LLM_MODEL})`;
-  if (appConfigured()) return `app复用(${configuredModelLabel()})`;
+  if (appConfigured()) return `app复用(${modelLabels().text})`;
   return "规则版(未配 LLM)";
 }
 
@@ -49,9 +49,7 @@ async function chat(system: string, user: string): Promise<string> {
     return data.choices?.[0]?.message?.content ?? "{}";
   }
   // 复用 app 已配模型(主进程解密+fetch,明文 key 不出主进程)。
-  const r = await chatViaApp(system, user);
-  if (r.error) throw new Error(`app LLM: ${r.error}`);
-  return r.content ?? "{}";
+  return await chatText(system, user);
 }
 
 /** 查 agent(LLM 版):从轨迹里找弱点。null = 未启用/失败 → 上层回退规则版。 */
