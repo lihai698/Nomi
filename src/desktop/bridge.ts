@@ -271,6 +271,19 @@ export type DesktopBridge = {
   /** 能力核：上报当前打开项目，供外部调用的 A/B 守卫（可选——老 preload 无此口）。 */
   capability?: {
     setActiveProject: (projectId: string) => void
+    /** 「接入 AI 编程助手」卡：读接入状态 + 配置片段。 */
+    mcpInfo: () => {
+      tokenReady: boolean
+      rpcRunning: boolean
+      installed: boolean
+      configPath: string
+      snippet: string
+      server: { command: string; args: string[] }
+    }
+    /** 一键写入 ~/.claude.json 的 mcpServers.nomi（合并 + 备份）。 */
+    installMcp: () => { ok: boolean; configPath: string; backupPath: string | null }
+    /** 撤销接入：删 mcpServers.nomi。 */
+    uninstallMcp: () => { ok: boolean }
   }
 }
 

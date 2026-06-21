@@ -20,6 +20,11 @@ export function setOpenProjectId(projectId: string): void {
   openProjectId = String(projectId || '').trim()
 }
 
+/** 当前进程 RPC 端口（未启动=null）。「接入助手卡」据此显示能力核就绪态。 */
+export function getCapabilityPort(): number | null {
+  return handle?.port ?? null
+}
+
 /**
  * 启动能力核对外口。绝不拖垮 app 启动：任何失败只记日志、不抛（fail-open，与 applySystemProxy 同纪律）。
  */

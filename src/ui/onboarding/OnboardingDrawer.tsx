@@ -17,6 +17,7 @@ import { FoldableModelCard } from './FoldableModelCard'
 import { VendorOnboardCard } from './VendorOnboardCard'
 import { ModelChipGroups, type ChipModel } from './ModelChipGroups'
 import { AddModelCard } from './AddModelCard'
+import { ConnectAssistantCard } from './ConnectAssistantCard'
 import { KNOWN_VENDORS, isKnownVendor } from '../../config/knownVendors'
 import { getDesktopBridge } from '../../desktop/bridge'
 import { notifyModelOptionsRefresh } from '../../config/useModelOptions'
@@ -162,6 +163,10 @@ export function OnboardingDrawer(): JSX.Element {
         </button>
 
         <AddModelCard onClick={() => openWizard(undefined)} />
+
+        {/* 接入 AI 编程助手：一键把 Nomi 接进 Claude Code（能力核 CLI/MCP）。 */}
+        <div className="text-micro font-semibold text-nomi-ink-40 pt-2 px-0.5">在编程助手里用 Nomi</div>
+        <ConnectAssistantCard />
       </div>
 
       <OnboardingWizard

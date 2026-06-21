@@ -1,0 +1,80 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+let homeDir = ''
+
+vi.mock('electron', () => ({
+  app: { getAppPath: () => '/fake/repo', getPath: () => homeDir },
+}))
+vi.mock('node:os', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:os')>()
+  return { ...actual, default: { ...actual, homedir: () => homeDir }, homedir: () => homeDir }
+})
+
+import { installMcp, readMcpInfo, uninstallMcp } from './mcpConfig'
+
+const roots: string[] = []
+function tempHome(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'nomi-mcpcfg-'))
+  roots.push(dir)
+  return dir
+}
+function claudeJson(): string {
+  return path.join(homeDir, '.claude.json')
+}
+
+beforeEach(() => {
+  homeDir = tempHome()
+})
+afterEach(() => {
+  for (const r of roots.splice(0)) fs.rmSync(r, { recursive: true, force: true })
+})
+
+describe('capabilityCore/mcpConfig', () => {
+  it('install 合并进已有 mcpServers——保留 cocos-creator，不覆盖整个文件', () => {
+    fs.writeFileSync(
+      claudeJson(),
+      JSON.stringify({ theme: 'dark', mcpServers: { 'cocos-creator': { command: 'x' } } }, null, 2),
+    )
+    const result = installMcp()
+    expect(result.ok).toBe(true)
+    expect(result.backupPath).toBeTruthy()
+    expect(fs.existsSync(result.backupPath!)).toBe(true)
+
+    const after = JSON.parse(fs.readFileSync(claudeJson(), 'utf8'))
+    expect(after.theme).toBe('dark') // 其它字段原样保留
+    expect(after.mcpServers['cocos-creator']).toEqual({ command: 'x' }) // 别人的 server 没被动
+    expect(after.mcpServers.nomi.command).toBe('node')
+    expect(after.mcpServers.nomi.args[0]).toContain('nomi-mcp.mjs')
+  })
+
+  it('install 在 ~/.claude.json 不存在时也能建出来', () => {
+    expect(fs.existsSync(claudeJson())).toBe(false)
+    const result = installMcp()
+    expect(result.ok).toBe(true)
+    expect(result.backupPath).toBeNull() // 原文件不存在 → 无备份
+    const after = JSON.parse(fs.readFileSync(claudeJson(), 'utf8'))
+    expect(after.mcpServers.nomi).toBeTruthy()
+  })
+
+  it('uninstall 只删 nomi，保留 cocos-creator', () => {
+    fs.writeFileSync(claudeJson(), JSON.stringify({ mcpServers: { 'cocos-creator': { command: 'x' } } }))
+    installMcp()
+    uninstallMcp()
+    const after = JSON.parse(fs.readFileSync(claudeJson(), 'utf8'))
+    expect(after.mcpServers.nomi).toBeUndefined()
+    expect(after.mcpServers['cocos-creator']).toEqual({ command: 'x' })
+  })
+
+  it('readMcpInfo 反映 installed 状态 + 给出可复制片段', () => {
+    expect(readMcpInfo(0).installed).toBe(false)
+    installMcp()
+    const info = readMcpInfo(17371)
+    expect(info.installed).toBe(true)
+    expect(info.rpcRunning).toBe(true)
+    expect(info.snippet).toContain('"nomi"')
+    expect(info.snippet).toContain('nomi-mcp.mjs')
+  })
+})

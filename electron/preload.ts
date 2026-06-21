@@ -199,5 +199,9 @@ contextBridge.exposeInMainWorld("nomiDesktop", {
   // 能力核：上报当前窗口打开的项目，供外部调用的 A/B 守卫（防外部直写正在编辑的工程）。
   capability: {
     setActiveProject: (projectId: string) => ipcRenderer.send("nomi:capability:active-project", projectId),
+    // 「接入 AI 编程助手」卡：读状态/配置 + 一键写入/撤销 ~/.claude.json。
+    mcpInfo: () => invokeSync("nomi:capability:mcp-info"),
+    installMcp: () => invokeSync("nomi:capability:mcp-install"),
+    uninstallMcp: () => invokeSync("nomi:capability:mcp-uninstall"),
   },
 });

@@ -54,7 +54,8 @@ import { VendorRequestError, encodeVendorErrorMessage } from "./vendor/vendorHtt
 import { traceVendorCompleted } from "./events/vendorCallTrace";
 import { registerOnboardingIpc } from "./ai/onboarding/onboardingIpc";
 import { registerUpdaterIpc } from "./update/autoUpdater";
-import { startCapabilityCore, stopCapabilityCore, setOpenProjectId } from "./capabilityCore/appIntegration";
+import { startCapabilityCore, stopCapabilityCore, setOpenProjectId, getCapabilityPort } from "./capabilityCore/appIntegration";
+import { readMcpInfo, installMcp, uninstallMcp } from "./capabilityCore/mcpConfig";
 
 // 尽早安装：捕获引导阶段起的 uncaughtException / unhandledRejection，落盘到 app logs（P0-8）。
 installCrashHandlers();
@@ -343,6 +344,10 @@ function registerIpc(): void {
   // 能力核 A/B 守卫：renderer 在打开/切换/关闭项目时上报当前打开的 projectId，
   // 让外部调用拒绝直写「正在窗口里编辑」的工程（防内存 store 回盘覆盖，见 capabilityCore/rpcServer）。
   ipcMain.on("nomi:capability:active-project", (_event, projectId: unknown) => setOpenProjectId(String(projectId || "")));
+  // 「接入 AI 编程助手」卡：读接入状态/配置片段 + 一键写入/撤销 ~/.claude.json 的 mcpServers.nomi。
+  registerSyncIpc("nomi:capability:mcp-info", () => readMcpInfo(getCapabilityPort()));
+  registerSyncIpc("nomi:capability:mcp-install", installMcp);
+  registerSyncIpc("nomi:capability:mcp-uninstall", uninstallMcp);
   registerAgentChatV2Ipc();
   registerTextStreamIpc();
   registerConversationsIpc();
