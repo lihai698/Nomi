@@ -286,7 +286,7 @@ export async function applyCanvasToolCall(toolName: string, args: unknown, gestu
     const rawShot = typeof record.shotClientId === 'string' ? record.shotClientId.trim() : ''
     const targetNodeId = rawShot ? resolveNodeId(rawShot) : undefined
     const speed: CameraSpeed = spec.speed ?? 'medium'
-    const fps = 12
+    const fps = 24 // Seedance 参考视频要求帧率 23.8–60 FPS（实测 12fps 被 InvalidParameter.FpsTooLow 拒）
     const frameCount = Math.round(CAMERA_SPEED_DURATION[speed] * fps)
     const existing = generationCanvasTools.read_canvas().nodes
     const position = layoutPlannedNodes(['image'], existing)[0]

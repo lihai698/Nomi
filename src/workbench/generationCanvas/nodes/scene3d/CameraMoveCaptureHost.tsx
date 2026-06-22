@@ -33,8 +33,8 @@ export type CameraMoveVideoResult = {
   createdAt: number
 }
 
-const DEFAULT_FPS = 12
-const DEFAULT_FRAME_COUNT = 48
+const DEFAULT_FPS = 24 // Seedance 参考视频要求 23.8–60 FPS（12fps 会被 InvalidParameter.FpsTooLow 拒）
+const DEFAULT_FRAME_COUNT = 120 // 缺时长时的兜底：5s @ 24fps
 const MIN_FRAME_COUNT = 2
 const MAX_FRAME_COUNT = 240
 
@@ -70,7 +70,7 @@ function deriveFrameCountFromScene(scene3dState: unknown, fps: number): number {
 function clampFps(value: number | undefined): number {
   const n = value ?? DEFAULT_FPS
   if (!Number.isFinite(n) || n <= 0) return DEFAULT_FPS
-  return Math.min(60, Math.max(1, n))
+  return Math.min(60, Math.max(24, n)) // 下限 24：Seedance 参考视频帧率必须 ≥23.8 FPS
 }
 
 /** 运镜 prompt 地板（通用，全供应商可用）：人话点出该镜的运镜，作为不吃视频参考时的降级。 */

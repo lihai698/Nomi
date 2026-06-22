@@ -216,14 +216,14 @@ describe('applyCanvasToolCall create_camera_move 执行', () => {
     const res = (await applyCanvasToolCall('create_camera_move', {
       shotClientId: 'v1',
       move: 'push_in',
-      speed: 'fast', // 3s × 12fps = 36 帧
+      speed: 'fast', // 3s × 24fps = 72 帧（Seedance 要求 ≥23.8fps）
     })) as { cameraMoveNodeId: string; targetNodeId: string | null }
 
     expect(res.targetNodeId).toBe(targetId)
     const scene3d = useGenerationCanvasStore.getState().nodes.find((n) => n.id === res.cameraMoveNodeId)
     expect(scene3d?.kind).toBe('scene3d')
     const flag = scene3d?.meta?.cameraMoveAutoCapture as Record<string, unknown> | undefined
-    expect(flag).toMatchObject({ targetNodeId: targetId, fps: 12, frameCount: 36, move: 'push_in' })
+    expect(flag).toMatchObject({ targetNodeId: targetId, fps: 24, frameCount: 72, move: 'push_in' })
     expect(scene3d?.meta?.scene3dState).toBeTruthy()
   })
 })
