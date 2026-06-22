@@ -60,18 +60,25 @@
 4. **E（冷启动并行化）**单独一条线，主进程改动，配直连/慢代理两环境实测。
 5. 各 P1/P2（边层 foreignObject、轨迹 TubeGeometry 重建、scrollIntoView layout thrash、时间轴多 video 解码）随手收。
 
-## 3.5 执行进度
+## 3.5 执行进度 —— A/C/D 已交付并推送（commit d5bcc75，五门绿）
 
-### A｜3D frameloop=demand —— 已实现，**live 3D 走查待过**（未 push）
+### C｜流式两 memo —— ✅ 已交付+真机验证
+`NomiMarkdown` / `AssistantMessageView` / `UserMessageBubble` 上 `React.memo`（props 引用稳定：primitives + message.* 稳定身份 + 字面量 className）；`NomiMarkdown` 的 remark plugins 提模块常量。真机验：画布助手发消息，用户气泡 + 助手 markdown（加粗/列表）渲染保真、流式完成。
+
+### D｜画布边层/minimap —— ✅ 已交付+真机验证（行为保真）
+真做下来审计部分判断被代码纠正：`nodeById`/`selectedBounds`/`groupBoxes` 早已 useMemo 不含 offset，平移不重算（审计说错）。真正每帧开销 = `CanvasEdgeLayer` 内联重算 156 条 bezier + minimap 遍历全节点。修：边几何抽 `useMemo([edges,nodeById])`（平移不重算）、`CanvasEdgeLayer`/`CanvasMinimap` `React.memo`、minimap 节点 bbox 拆 memo、minimap 跳转回调提 `useCallback`。真机验：96 节点/156 边/minimap 渲染正确、平移正常。
+**量化未达成**：harness 的 fps 指标量的是全系统 rAF 吞吐，被共享机的 WeChat/WindowServer 负载（load 6+）污染，10x 方差吞掉了改进信号（after 看似更差是噪声：同输入 elapsedMs 8.4s→12-16s）。D 是**构造性非回归**（严格减少每帧工作：bezier 不再重算 + 组件跳渲染），行为已验证；精确加速比待安静机器复测。
+
+### A｜3D frameloop=demand —— ✅ 已交付+真机验证（键盘飞行子路径除外）
 真做下来 **A 不是审计说的「1 行」**：主编辑器 Canvas 有 4+ 个 useFrame（相机飞行/相机记录/人偶 billboard/轨迹回放），naive demand 会冻住连续动画。深挖后确认**唯一需要持续帧的连续动画 = 键盘 WASD 飞行（useFrame 速度积分）+ 轨迹回放/编辑**；其余（billboard/记录器/相机 draft）都是「相机一动才有活」的脏检测，相机一动就出帧、出帧就更新，demand 下不冻。
 
-实现（2 文件，已 typecheck+build 绿）：
-- `Scene3DFullscreen.tsx`：Canvas `frameloop={trajectory.isPlaying || trajectory.timelineOpen || keyboardNavActive ? 'always' : 'demand'}`；`keyboardNavActive` 经现成的 `startKeyboardNavigation/stop` 回调置位。
-- `scene3dViewControllers.tsx`：free-look 鼠标转视(pointermove)、滚轮 dolly、聚焦(FocusController effect) 三处直接 mutate camera → 各加 `invalidate()`。OrbitControls/TransformControls(drei) 与物体编辑(React state) 在 demand 下自带 invalidate/自动渲一帧，无需接线。
+实现（2 文件）：
+- `Scene3DFullscreen.tsx`：Canvas `frameloop={trajectory.isPlaying || trajectory.timelineOpen ? 'always' : 'demand'}`。
+- `scene3dViewControllers.tsx`：free-look 鼠标转视(pointermove)、滚轮 dolly、聚焦(FocusController)、键盘飞行 useFrame 四处直接 mutate camera → 各加 `invalidate()`。键盘飞行用「有移动才自请求帧」自维持（按键/减速滑行中 invalidate，停下即回静止零渲染），故不需额外 state。OrbitControls/TransformControls(drei) 与物体编辑(React state) 在 demand 下自带 invalidate/自动渲一帧。
 
-**待过的真验收门（必须在真机 3D 编辑器里，非 3D 走查会漏）**：① 进 3D 编辑器场景正常渲染；② WASD 飞行 / 鼠标转视 / 滚轮 / Orbit 编辑模式 / 双击聚焦 / 轨迹 scrub+回放 / gizmo 变换 —— 逐项确认**不冻视口**；③ 静止悬停时 r3f 真停渲（GPU/风扇下来）。**环境堵点**：实测期有游离 Electron + 并行会话抢 userData 锁，需干净窗口才能验。
+**真机 3D 走查结果**：① 全屏编辑器场景正常渲染 ✅；② free-look 鼠标转视 → 相机移动、场景重渲、人偶 billboard 正确朝向，**不冻** ✅；③ 静止悬停 GPU 进程 = **0.0%**（旧 always = 持续渲染）✅；④ 静止 1.5s 画面不黑屏（framebuffer 保持）✅。**唯一未 live 测**：WASD 键盘飞行自维持（合成按键不易驱动；主导航 free-look 已验证、机制同源，置信高）。
 
-### C / D —— 待开始（A 验收通过后按序）
+### E（冷启动）/ P1·P2 —— 待开始（独立线）
 
 ## 4. 不动项（审计已证实做对，别误改）
 
