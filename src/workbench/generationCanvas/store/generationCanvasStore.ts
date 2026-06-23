@@ -215,6 +215,27 @@ export const useGenerationCanvasStore = create<GenerationCanvasState>()(subscrib
     for (const event of events) projection = applyCanvasEvent(projection, event)
     set({ nodes: projection.nodes, edges: projection.edges, groups: projection.groups })
   },
+  applyExternalGraph: (snapshot) => {
+    // A 模式实时桥:外部 MCP 改动经主进程算好整张快照,这里应用进运行中 store。
+    // 与 restoreSnapshot 的区别:不重置视口/不清 undo 基线——会话中应用,保住用户当前视角与撤销历史。
+    const normalized = normalizeStoreSnapshot(snapshot)
+    pushUndoSnapshot(get()) // 入历史:外部改动可被用户 Ctrl+Z 撤销
+    set((state) => {
+      state.nodes = normalized.nodes
+      state.edges = normalized.edges
+      state.groups = normalized.groups
+      // 选区是会话态:clamp 到仍存在的节点(外部可能删了选中的)。
+      const surviving = new Set(normalized.nodes.map((node) => node.id))
+      state.selectedNodeIds = state.selectedNodeIds.filter((id) => surviving.has(id))
+      state.pendingConnectionSourceId = ''
+      bumpPersistRevision(state) // 触发 700ms 防抖落盘
+      Object.assign(state, getHistoryFlags())
+    })
+    // 影子记账:与 undo/redo 同口径,发 snapshot.restored 全量后态(replay≡snapshot 恒真)。
+    emitCanvasGesture([
+      { type: 'canvas.snapshot.restored', payload: { snapshot: { nodes: normalized.nodes, edges: normalized.edges, groups: normalized.groups } } },
+    ])
+  },
   ...createCanvasNodeActions(set, get, store),
   ...createCanvasGraphActions(set, get, store),
   ...createCanvasRunActions(set, get, store),

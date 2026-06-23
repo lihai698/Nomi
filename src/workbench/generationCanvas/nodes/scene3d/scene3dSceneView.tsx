@@ -20,6 +20,7 @@ import {
   CAMERA_AIM_FEEDBACK_LENGTH,
   CAMERA_AIM_HANDLE_DISTANCE,
   CAMERA_DEFAULT_TARGET,
+  SCENE3D_RUNTIME_ID_KEY,
 } from './scene3dConstants'
 import { SCENE3D_ASPECT_RATIOS } from './scene3dTypes'
 import type { Scene3DCamera, Scene3DObject, Scene3DVector3, Scene3DTransformMode } from './scene3dTypes'
@@ -240,6 +241,7 @@ export function SceneObjectView({
   const group = (
     <group
       ref={visualRef}
+      userData={{ [SCENE3D_RUNTIME_ID_KEY]: object.id }}
       visible={object.visible}
       position={object.position}
       rotation={object.rotation}
@@ -558,7 +560,7 @@ export function CameraHelperView({
   const marker = (
     <group
       ref={markerRef}
-      userData={{ [CAMERA_HELPER_FLAG]: true }}
+      userData={{ [CAMERA_HELPER_FLAG]: true, [SCENE3D_RUNTIME_ID_KEY]: cameraData.id }}
       visible={cameraData.visible}
       position={cameraData.position}
       rotation={cameraRotation}

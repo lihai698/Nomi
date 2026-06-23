@@ -447,7 +447,7 @@ export default function NodeParameterControls({
 
   // 走到这里只剩 section="references"（parameters/settings 已提前 return；旧的 all/model/controls 网格
   // 渲染随设置弹层落地而删除——参数现在进设置弹层，模型进底栏芯片，不再有这套裸值网格，Rule 1/12）。
-  const rootClassName = cn('generation-canvas-v2-node__ref-section', 'flex flex-col gap-[5px]')
+  const rootClassName = cn('generation-canvas-v2-node__ref-section', 'flex flex-col gap-1')
 
   return (
     <div className={rootClassName} aria-label="参考素材">
@@ -473,7 +473,7 @@ export default function NodeParameterControls({
       ) : null}
 
       {showReferences && uploadError ? (
-        <div className={cn('text-workbench-danger text-micro leading-[1.25]')} role="alert">{uploadError}</div>
+        <div className={cn('text-workbench-danger text-micro leading-tight')} role="alert">{uploadError}</div>
       ) : null}
     </div>
   )

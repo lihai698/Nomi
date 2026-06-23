@@ -2,7 +2,6 @@ import {
   Checkbox,
   FileInput,
   NumberInput,
-  Select,
   SegmentedControl,
   Switch,
   TextInput,
@@ -10,7 +9,6 @@ import {
   type CheckboxProps,
   type FileInputProps,
   type NumberInputProps,
-  type SelectProps,
   type SegmentedControlProps,
   type SwitchProps,
   type TextInputProps,
@@ -22,7 +20,6 @@ export type DesignCheckboxProps = CheckboxProps
 export type DesignFileInputProps = FileInputProps
 export type DesignTextInputProps = TextInputProps
 export type DesignTextareaProps = TextareaProps
-export type DesignSelectProps = SelectProps
 export type DesignNumberInputProps = NumberInputProps
 export type DesignSegmentedControlProps = SegmentedControlProps
 export type DesignSwitchProps = SwitchProps
@@ -65,16 +62,6 @@ export function DesignTextarea({ className, radius = 'sm', autosize = true, ...p
   )
 
   return <Textarea {...props} autosize={autosize} className={rootClassName} radius={radius} />
-}
-
-export function DesignSelect({ className, radius = 'sm', ...props }: DesignSelectProps): JSX.Element {
-  const rootClassName = cn(
-    'tc-design-select',
-    'text-body-sm',
-    className,
-  )
-
-  return <Select {...props} className={rootClassName} radius={radius} />
 }
 
 export function DesignNumberInput({ className, radius = 'sm', ...props }: DesignNumberInputProps): JSX.Element {

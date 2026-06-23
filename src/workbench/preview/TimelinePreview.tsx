@@ -416,11 +416,11 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
             )}>
               <span className={cn(
                 'workbench-preview-player__placeholder-title',
-                'font-nomi-display text-lg tracking-tight text-[var(--workbench-muted)]',
+                'font-nomi-display text-title tracking-tight text-[var(--workbench-muted)]',
               )}>画面预览</span>
               <span className={cn(
                 'workbench-preview-player__placeholder-sub',
-                'text-xs text-[var(--workbench-muted-soft)]',
+                'text-caption text-[var(--workbench-muted-soft)]',
               )}>{"从「生成区」拖入素材即可显示"}</span>
             </div>
           ) : null}
@@ -429,8 +429,8 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
           <div className={cn(
             'workbench-preview-player__media-error',
             'absolute left-3 right-3 bottom-3 z-[4]',
-            'py-[7px] px-[9px] bg-[color-mix(in_srgb,var(--nomi-paper)_90%,transparent)]',
-            'text-[var(--workbench-danger)] text-xs leading-[1.35] pointer-events-none',
+            'py-2 px-2 bg-[color-mix(in_srgb,var(--nomi-paper)_90%,transparent)]',
+            'text-[var(--workbench-danger)] text-caption leading-snug pointer-events-none',
           )} role="alert">
             {playbackError}
           </div>
@@ -489,7 +489,7 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
                 padding: box.hasBackdrop ? '0.32em 0.7em' : 0,
                 background: box.hasBackdrop ? 'color-mix(in oklch, var(--nomi-paper) 86%, transparent)' : 'transparent',
                 border: box.hasBackdrop ? '1px solid var(--nomi-line-soft)' : 'none',
-                borderRadius: 'var(--nomi-radius-md)',
+                borderRadius: 'var(--nomi-radius)',
                 // 折行契约：预览用 CSS 原生折行，导出 canvas 用 textLayout.wrapTextToWidth 复刻同一语义
                 // （white-space:pre-wrap + word-break:break-word ⇔ 显式换行 + 优先整词断 + 超长词逐字断）。
                 // 两端共用 box 几何（resolveTextBox）与内边距（0.32em/0.7em ↔ 导出 fontSize*1.4 budget），断行一致。
@@ -566,7 +566,7 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
       <div className={cn(
         'workbench-preview-player__control-bar',
         // 窄窗口时换行而非把「导出 MP4」挤出/截断：flex-wrap + 居中；圆角改 lg（换行后不再是单行 pill）。
-        'relative z-[3] shrink-0 max-w-full flex flex-wrap justify-center items-center gap-1.5 p-[5px]',
+        'relative z-[3] shrink-0 max-w-full flex flex-wrap justify-center items-center gap-1.5 p-1.5',
         'border border-[var(--workbench-border)] rounded-[var(--nomi-radius-lg)]',
         'bg-[color-mix(in_oklch,var(--nomi-paper)_88%,transparent)]',
         'shadow-[var(--workbench-shadow-sm)] backdrop-blur-[12px] backdrop-saturate-[1.2]',
@@ -590,7 +590,7 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
           title={isEmpty ? '时间轴为空' : undefined}
         />
         <WorkbenchIconButton
-          className={cn('w-[28px] h-[28px] grid place-items-center border-0 rounded-[var(--workbench-control-radius)] bg-transparent text-[var(--workbench-muted)] enabled:hover:bg-[var(--workbench-hover)] disabled:opacity-40')}
+          className={cn('w-[28px] h-[28px] grid place-items-center border-0 rounded-nomi-sm bg-transparent text-[var(--workbench-muted)] enabled:hover:bg-[var(--workbench-hover)] disabled:opacity-40')}
           label="上一帧"
           title="上一帧（←）"
           icon={<IconPlayerSkipBack size={15} stroke={1.6} />}
@@ -598,7 +598,7 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
           disabled={isEmpty}
         />
         <WorkbenchIconButton
-          className={cn('w-[28px] h-[28px] grid place-items-center border-0 rounded-[var(--workbench-control-radius)] bg-transparent text-[var(--workbench-muted)] enabled:hover:bg-[var(--workbench-hover)] disabled:opacity-40')}
+          className={cn('w-[28px] h-[28px] grid place-items-center border-0 rounded-nomi-sm bg-transparent text-[var(--workbench-muted)] enabled:hover:bg-[var(--workbench-hover)] disabled:opacity-40')}
           label="下一帧"
           title="下一帧（→）"
           icon={<IconPlayerSkipForward size={15} stroke={1.6} />}
@@ -610,7 +610,7 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
         </span>
         <div className={cn('workbench-preview-player__volume', 'inline-flex items-center gap-1')}>
           <WorkbenchIconButton
-            className={cn('w-[28px] h-[28px] grid place-items-center border-0 rounded-[var(--workbench-control-radius)] bg-transparent text-[var(--workbench-muted)] enabled:hover:bg-[var(--workbench-hover)]')}
+            className={cn('w-[28px] h-[28px] grid place-items-center border-0 rounded-nomi-sm bg-transparent text-[var(--workbench-muted)] enabled:hover:bg-[var(--workbench-hover)]')}
             label={muted ? '取消静音' : '静音'}
             title={muted ? '取消静音' : '静音'}
             icon={muted ? <IconVolumeOff size={15} stroke={1.6} /> : <IconVolume size={15} stroke={1.6} />}
@@ -633,7 +633,7 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
           />
         </div>
         <WorkbenchIconButton
-          className={cn('w-[28px] h-[28px] grid place-items-center border-0 rounded-[var(--workbench-control-radius)] bg-transparent text-[var(--workbench-muted)] enabled:hover:bg-[var(--workbench-hover)]')}
+          className={cn('w-[28px] h-[28px] grid place-items-center border-0 rounded-nomi-sm bg-transparent text-[var(--workbench-muted)] enabled:hover:bg-[var(--workbench-hover)]')}
           label={isFullscreen ? '退出全屏' : '全屏'}
           title={isFullscreen ? '退出全屏' : '全屏预览'}
           icon={isFullscreen ? <IconMinimize size={15} stroke={1.6} /> : <IconMaximize size={15} stroke={1.6} />}
@@ -672,7 +672,7 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
         )} aria-hidden="true" />
         <div className={cn(
           'workbench-preview-player__control-group',
-          'flex-none inline-flex items-center gap-[3px]',
+          'flex-none inline-flex items-center gap-1',
         )} aria-label="预览构图">
           <WorkbenchIconButton className={cn('workbench-preview-player__icon-button', CONTROL_ICON_BUTTON_CLASS)} label="缩小画面" icon={<IconZoomOut size={16} />} onClick={() => updateMediaScale(-0.1)} disabled={!hasMedia} />
           <span className={cn(
@@ -704,7 +704,7 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
               'workbench-preview-player__text-menu',
               'absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 z-[5]',
               'min-w-[148px] p-1 flex flex-col gap-0.5',
-              'rounded-[var(--nomi-radius-md)] border border-[var(--workbench-border)]',
+              'rounded-[var(--nomi-radius)] border border-[var(--workbench-border)]',
               'bg-[var(--nomi-paper)] shadow-[var(--workbench-shadow-pop)]',
             )} role="menu">
               <button type="button" role="menuitem"
@@ -736,19 +736,19 @@ export default function TimelinePreview({ activeClips, aspectRatio, fps, playhea
           )}>
             <div className={cn(
               'workbench-preview-player__export-progress-bar-track',
-              'w-20 h-1 bg-white/15 rounded-sm overflow-hidden',
+              'w-20 h-1 bg-nomi-ink-10 rounded-nomi-sm overflow-hidden',
             )}>
               <div
                 className={cn(
                   'workbench-preview-player__export-progress-bar',
-                  'h-1 bg-nomi-accent rounded-sm transition-[width] duration-200 ease-in-out min-w-1',
+                  'h-1 bg-nomi-accent rounded-nomi-sm transition-[width] duration-200 ease-in-out min-w-1',
                 )}
                 style={{ width: `${Math.round(exportRatio * 100)}%` }}
               />
             </div>
             <span className={cn(
               'workbench-preview-player__export-progress-label',
-              'text-xs text-white/70 whitespace-nowrap',
+              'text-caption text-nomi-ink-60 whitespace-nowrap',
             )}>
               {exportStatus === 'preparing' ? '准备中…' : exportStatus === 'converting' ? '转码 MP4…' : `导出中 ${Math.round(exportRatio * 100)}%`}
             </span>

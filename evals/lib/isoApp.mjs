@@ -54,8 +54,20 @@ export async function launchIsolatedApp(repoRoot, iso) {
   return { app, win };
 }
 
+/** 隔离实例每次都是首启 → SplashIntro 开屏遮罩会拦点击。先跳过它(无则 no-op)。 */
+export async function dismissSplashIfPresent(win) {
+  const skip = win.locator('[data-splash-skip="true"]');
+  try {
+    await skip.click({ timeout: 4_000 });
+    await win.locator(".nomi-splash").waitFor({ state: "detached", timeout: 4_000 }).catch(() => undefined);
+  } catch {
+    // 开屏没出现 / 已自动收尾 → 放行
+  }
+}
+
 /** 起始页 → 新建空白项目 → 等项目目录落盘,返回 projectDir。 */
 export async function createBlankProject(win, projectsDir) {
+  await dismissSplashIfPresent(win);
   await win.getByText("新建空白项目", { exact: false }).first().click({ timeout: 10_000 });
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {

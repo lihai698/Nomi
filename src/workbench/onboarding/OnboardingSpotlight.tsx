@@ -195,7 +195,7 @@ export function OnboardingSpotlight({ step, isLast, onNext, onDismiss }: Props):
             )}
           >
             {isLast ? '完成' : '下一步'}
-            {isLast ? null : <IconArrowRight size={13} stroke={2} aria-hidden="true" />}
+            {isLast ? null : <IconArrowRight size={13} stroke={1.6} aria-hidden="true" />}
           </button>
         </div>
       </div>

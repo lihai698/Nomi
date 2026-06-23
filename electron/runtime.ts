@@ -462,19 +462,18 @@ export async function executeProfileOperation(input: {
   operation: HttpOperation;
   providerMeta?: JsonRecord;
 }): Promise<{ response: unknown; request: unknown }> {
-  // R1：发送前把 request 里的本地素材(nomi-local://)按策略变成 vendor 可达值。
-  // 带跨供应商 fallback：目标 vendor 无上传能力时自动用 KIE/apimart 中转，
-  // 上传 apiKey 可能与生成 apiKey 不同（中转 vendor 的 key）——通用解。
+  // R1：发送前把本地素材(nomi-local://)按策略变成 vendor 可达值。带跨供应商 fallback + 内容类型感知：
+  // 每素材按媒体类型挑通道(图→apimart/KIE base64;视频→KIE stream,apimart image-only 跳过)。上传 key 可异于生成 key。
   const uploadCatalog = readCatalog();
-  const uploadResolved = resolveAssetIngestionWithFallback(
-    input.vendor,
-    uploadCatalog.vendors,
-    (key) => decryptApiKeyRecord(uploadCatalog.apiKeysByVendor[key]),
-  );
   const localized = await localizeAssetsForVendor(
     input.request.extras,
-    uploadResolved?.ingestion ?? null,
-    uploadResolved?.uploadApiKey ?? input.apiKey,
+    (mediaKind) =>
+      resolveAssetIngestionWithFallback(
+        input.vendor,
+        uploadCatalog.vendors,
+        (key) => decryptApiKeyRecord(uploadCatalog.apiKeysByVendor[key]),
+        mediaKind,
+      ),
     readNomiLocalAsset,
     postJsonForAssetUpload,
     postMultipartForAssetUpload,

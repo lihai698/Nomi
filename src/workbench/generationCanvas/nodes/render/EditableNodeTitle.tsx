@@ -86,7 +86,7 @@ export function EditableNodeTitle({ nodeId, value, placeholder = '未命名', cl
         'min-w-0 flex-1 truncate cursor-text select-none',
         'text-body font-medium',
         isEmpty ? 'text-nomi-ink-40 italic' : 'text-nomi-ink',
-        'hover:bg-nomi-ink-05 rounded-sm -mx-1 px-1 transition-colors',
+        'hover:bg-nomi-ink-05 rounded-nomi-sm -mx-1 px-1 transition-colors',
         className,
       )}
     >

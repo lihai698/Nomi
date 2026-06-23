@@ -11,20 +11,19 @@
 //
 // 真相源（P1）：generate 不重建 archetype→body——runTask 主进程内部据 catalog mapping + extras
 // 自己组装请求体（findExecutableModel / requestPipeline / 资产本地化）。本核只构造高层 TaskRequest。
-import { listProjects, readProject, saveProject, createProject, type ProjectRecord } from '../projects/repository'
+import { listProjects, createProject } from '../projects/repository'
 import { readCatalog } from '../catalog/catalogStore'
-import { mintSpendGrant } from '../spendGrant'
 import {
   addNodes,
   connectNodes,
   deleteNodes,
-  normalizeSnapshot,
   readCanvas,
   setNodePrompt,
   type CanvasSnapshot,
   type ConnectionSpec,
   type NodeSpec,
 } from './canvasGraph'
+import type { ProjectGateway } from './gateway'
 
 /** 生成意图（粗粒度）→ 默认 ProfileKind。调用方也可显式传 kind 覆盖。 */
 export type GenerateIntent = 'image' | 'video' | 'text' | 'audio'
@@ -86,23 +85,44 @@ function extractTextFromRaw(raw: unknown): string {
   return ''
 }
 
-/** 读取项目的画布快照（normalize 后），坏/缺数据降级为空。 */
-function readProjectSnapshot(record: ProjectRecord): CanvasSnapshot {
-  const payload = (record.payload && typeof record.payload === 'object' ? (record.payload as Record<string, unknown>) : {}) as Record<string, unknown>
-  return normalizeSnapshot(payload.generationCanvas)
+/** 把目标节点的 status（可带 error）改写进快照（其余节点/边原样）。供生成各阶段的实时态用。 */
+function setNodeStatusInSnapshot(snapshot: CanvasSnapshot, nodeId: string, status: string, error?: string): CanvasSnapshot {
+  return {
+    ...snapshot,
+    nodes: snapshot.nodes.map((node) => (node.id === nodeId ? { ...node, status, ...(error ? { error } : {}) } : node)),
+  }
 }
 
-/** 把改好的快照写回 record.payload.generationCanvas，其余 payload 字段原样保留（不碰 timeline 等）。 */
-function writeProjectSnapshot(record: ProjectRecord, snapshot: CanvasSnapshot): ProjectRecord {
-  const payload = (record.payload && typeof record.payload === 'object' ? { ...(record.payload as Record<string, unknown>) } : {}) as Record<string, unknown>
-  payload.generationCanvas = snapshot
-  return { ...record, payload }
-}
-
-function mustReadProject(projectId: string): ProjectRecord {
-  const record = readProject(projectId)
-  if (!record) throw new Error(`项目不存在: ${projectId}`)
-  return record
+/** 把生成结果落回目标节点（success/error 态 + result 对象）。形状与 renderer GenerationNodeResult 对齐。 */
+function writeResultToSnapshot(snapshot: CanvasSnapshot, nodeId: string, result: TaskResultLike, intent: GenerateIntent): CanvasSnapshot {
+  const primary = (result.assets || [])[0]
+  const text = intent === 'text' ? extractTextFromRaw(result.raw) : (typeof primary?.text === 'string' ? primary.text : '')
+  const hasOutput = Boolean(primary || text)
+  return {
+    ...snapshot,
+    nodes: snapshot.nodes.map((item) =>
+      item.id === nodeId
+        ? {
+            ...item,
+            status: result.status === 'succeeded' ? 'success' : result.status === 'failed' ? 'error' : (typeof item.status === 'string' ? item.status : 'idle'),
+            ...(hasOutput
+              ? {
+                  result: {
+                    id: result.id || `result-${nodeId}`,
+                    type: intent === 'video' ? 'video' : intent === 'audio' ? 'audio' : intent === 'text' ? 'text' : 'image',
+                    ...(primary?.url ? { url: primary.url } : {}),
+                    ...(primary?.thumbnailUrl ? { thumbnailUrl: primary.thumbnailUrl } : {}),
+                    ...(primary?.providerUrl ? { providerUrl: primary.providerUrl } : {}),
+                    ...(text ? { text } : {}),
+                    ...(primary?.assetId ? { assetId: primary.assetId } : {}),
+                    createdAt: Date.now(),
+                  },
+                }
+              : {}),
+          }
+        : item,
+    ),
+  }
 }
 
 // ── 工程级 ─────────────────────────────────────────────────────────────
@@ -131,40 +151,36 @@ export function listAvailableModels(): Array<{ vendor: string; vendorName: strin
     }))
 }
 
-// ── 画布级（B 模式：直写 project.json）──────────────────────────────────
+// ── 画布级（经 ProjectGateway：A 模式转发渲染层 / B 模式直写盘，统一逻辑）──────
 
-export function readProjectCanvas(projectId: string): ReturnType<typeof readCanvas> {
-  return readCanvas(readProjectSnapshot(mustReadProject(projectId)))
+export async function readProjectCanvas(gateway: ProjectGateway): Promise<ReturnType<typeof readCanvas>> {
+  return readCanvas(await gateway.readDoc())
 }
 
-export function addProjectNodes(projectId: string, specs: NodeSpec[]): { ids: string[] } {
-  const record = mustReadProject(projectId)
-  const { snapshot, ids } = addNodes(readProjectSnapshot(record), specs)
-  saveProject(projectId, writeProjectSnapshot(record, snapshot))
+export async function addProjectNodes(gateway: ProjectGateway, specs: NodeSpec[]): Promise<{ ids: string[] }> {
+  const { snapshot, ids } = addNodes(await gateway.readDoc(), specs)
+  await gateway.apply(snapshot)
   return { ids }
 }
 
-export function connectProjectNodes(projectId: string, connections: ConnectionSpec[]): {
+export async function connectProjectNodes(gateway: ProjectGateway, connections: ConnectionSpec[]): Promise<{
   edgeIds: string[]
   skipped: Array<{ connection: ConnectionSpec; reason: string }>
-} {
-  const record = mustReadProject(projectId)
-  const result = connectNodes(readProjectSnapshot(record), connections)
-  saveProject(projectId, writeProjectSnapshot(record, result.snapshot))
+}> {
+  const result = connectNodes(await gateway.readDoc(), connections)
+  await gateway.apply(result.snapshot)
   return { edgeIds: result.edgeIds, skipped: result.skipped }
 }
 
-export function setProjectNodePrompt(projectId: string, nodeId: string, prompt: string, title?: string): { changed: boolean } {
-  const record = mustReadProject(projectId)
-  const { snapshot, changed } = setNodePrompt(readProjectSnapshot(record), nodeId, prompt, title)
-  if (changed) saveProject(projectId, writeProjectSnapshot(record, snapshot))
+export async function setProjectNodePrompt(gateway: ProjectGateway, nodeId: string, prompt: string, title?: string): Promise<{ changed: boolean }> {
+  const { snapshot, changed } = setNodePrompt(await gateway.readDoc(), nodeId, prompt, title)
+  if (changed) await gateway.apply(snapshot)
   return { changed }
 }
 
-export function deleteProjectNodes(projectId: string, nodeIds: string[]): { deleted: string[] } {
-  const record = mustReadProject(projectId)
-  const { snapshot, deleted } = deleteNodes(readProjectSnapshot(record), nodeIds)
-  if (deleted.length) saveProject(projectId, writeProjectSnapshot(record, snapshot))
+export async function deleteProjectNodes(gateway: ProjectGateway, nodeIds: string[]): Promise<{ deleted: string[] }> {
+  const { snapshot, deleted } = deleteNodes(await gateway.readDoc(), nodeIds)
+  if (deleted.length) await gateway.apply(snapshot)
   return { deleted }
 }
 
@@ -196,6 +212,7 @@ export type GenerateInput = {
  */
 export async function generateOnProject(
   input: GenerateInput,
+  gateway: ProjectGateway,
   runTaskFn: RunTaskFn,
   fetchTaskResultFn?: FetchTaskResultFn,
 ): Promise<{
@@ -203,8 +220,7 @@ export async function generateOnProject(
   status: string
   assets: TaskResultLike['assets']
 }> {
-  const record = mustReadProject(input.projectId)
-  let snapshot = readProjectSnapshot(record)
+  let snapshot = await gateway.readDoc()
 
   // 解析/新建目标节点
   let nodeId = input.nodeId || ''
@@ -227,6 +243,26 @@ export async function generateOnProject(
   const references = input.references && input.references.length ? input.references : (Array.isArray(node.references) ? node.references : [])
   const kind = input.kind || defaultKindForIntent(intent, references.length > 0)
 
+  // 先把节点以「排队中」态写出去——A 模式：节点立即出现在画布（所见即所得）；B 模式：落盘占位。
+  snapshot = setNodeStatusInSnapshot(snapshot, nodeId, 'queued')
+  await gateway.apply(snapshot)
+
+  // 付费确认：A 模式弹实时卡，真人点确认才铸令牌；B 模式只认 env 逃生口。
+  // 不在此硬拦——enforcement 仍在 runTask 内的 assertAndConsumeSpendGrant（红队不变量：主进程硬闸）；
+  // 未确认 = 不带 grantId，runTask 会 fail-fast 抛「未确认」并秒回，不死等、不烧额度。
+  const grantId = await gateway.confirmSpend({
+    projectId: input.projectId,
+    nodeId,
+    intent,
+    vendor: input.vendor,
+    modelKey: input.modelKey,
+    prompt,
+  })
+
+  // 进入生成中态（A 模式：节点显示「生成中」）。
+  snapshot = setNodeStatusInSnapshot(snapshot, nodeId, 'running')
+  await gateway.apply(snapshot)
+
   const request = {
     kind,
     prompt,
@@ -238,60 +274,47 @@ export async function generateOnProject(
       nodeId,
       nodeKind: node.kind,
       ...(references.length ? { referenceImages: references } : {}),
-      // headless 付费逃生口(仅评测/CLI 显式授权):env NOMI_LOOP_SPEND_OK=1 才铸令牌过付费守卫。
-      // 红队不变量不动:默认不开 → AI/程序化路径仍铸不了令牌、被守卫硬拦(spendGrant.ts 信任边界)。
-      // 开了 = 本进程(评测脚本)显式为本次生成授权,等价用户在 GUI 点确认。
-      ...(process.env.NOMI_LOOP_SPEND_OK === '1' ? { grantId: mintSpendGrant({ nodeIds: [nodeId] }) } : {}),
+      ...(grantId ? { grantId } : {}),
     },
   }
 
-  let result = await runTaskFn({ vendor: input.vendor, request })
+  let result: TaskResultLike
+  try {
+    result = await runTaskFn({ vendor: input.vendor, request })
 
-  // 异步 vendor 首调返 queued/processing → 本进程内轮询到终态（视频给更长超时）。无 fetch 注入则不轮询。
-  if (fetchTaskResultFn && result.status && !TERMINAL_STATUSES.has(result.status)) {
-    const timeoutMs = kind === 'text_to_video' || kind === 'image_to_video' ? 300000 : 240000
-    const startedAt = Date.now()
-    while (result.status && !TERMINAL_STATUSES.has(result.status)) {
-      if (Date.now() - startedAt > timeoutMs) break
-      await delay(2000)
-      const polled = await fetchTaskResultFn({
-        taskId: result.id || '',
-        vendor: input.vendor,
-        taskKind: kind,
-        prompt,
-        modelKey: input.modelKey,
-      })
-      result = polled.result
+    // 异步 vendor 首调返 queued/processing → 本进程内轮询到终态（视频给更长超时）。无 fetch 注入则不轮询。
+    if (fetchTaskResultFn && result.status && !TERMINAL_STATUSES.has(result.status)) {
+      const timeoutMs = kind === 'text_to_video' || kind === 'image_to_video' ? 300000 : 240000
+      const startedAt = Date.now()
+      while (result.status && !TERMINAL_STATUSES.has(result.status)) {
+        if (Date.now() - startedAt > timeoutMs) break
+        await delay(2000)
+        const polled = await fetchTaskResultFn({
+          taskId: result.id || '',
+          vendor: input.vendor,
+          taskKind: kind,
+          prompt,
+          modelKey: input.modelKey,
+        })
+        result = polled.result
+      }
     }
+  } catch (error) {
+    // 失败（含未授权/超时）→ 把节点落 error 态写出去（A 模式：用户立刻看到失败 + 原因），再透传错误给 agent。
+    const message = error instanceof Error ? error.message : String(error)
+    try {
+      await gateway.apply(setNodeStatusInSnapshot(await gateway.readDoc(), nodeId, 'error', message))
+    } catch {
+      /* 写 error 态失败不掩盖原始错误 */
+    }
+    throw error
   }
 
-  // 落结果回节点。图/视频/音频走首资产；文本无资产，文本在 raw（best-effort 抽取）。失败也保存 prompt/节点。
+  // 落结果回节点。重读快照（A 模式用户可能挪过卡）再写目标节点。图/视频/音频走首资产；文本在 raw。
+  const persisted = writeResultToSnapshot(await gateway.readDoc(), nodeId, result, intent)
+  await gateway.apply(persisted)
+
   const primary = (result.assets || [])[0]
   const text = intent === 'text' ? extractTextFromRaw(result.raw) : (typeof primary?.text === 'string' ? primary.text : '')
-  const hasOutput = Boolean(primary || text)
-  const persisted = snapshot.nodes.map((item) =>
-    item.id === nodeId
-      ? {
-          ...item,
-          status: result.status === 'succeeded' ? 'success' : result.status === 'failed' ? 'error' : item.status,
-          ...(hasOutput
-            ? {
-                result: {
-                  id: result.id || `result-${nodeId}`,
-                  type: intent === 'video' ? 'video' : intent === 'audio' ? 'audio' : intent === 'text' ? 'text' : 'image',
-                  ...(primary?.url ? { url: primary.url } : {}),
-                  ...(primary?.thumbnailUrl ? { thumbnailUrl: primary.thumbnailUrl } : {}),
-                  ...(primary?.providerUrl ? { providerUrl: primary.providerUrl } : {}),
-                  ...(text ? { text } : {}),
-                  ...(primary?.assetId ? { assetId: primary.assetId } : {}),
-                  createdAt: Date.now(),
-                },
-              }
-            : {}),
-        }
-      : item,
-  )
-  saveProject(input.projectId, writeProjectSnapshot(record, { ...snapshot, nodes: persisted }))
-
   return { nodeId, status: result.status || 'unknown', assets: result.assets || [], ...(text ? { text } : {}) }
 }

@@ -13,6 +13,17 @@ import type { Vendor } from "../catalog/types";
 
 export type VendorErrorCategory = "auth" | "balance" | "quota" | "input" | "server" | "network" | "unknown";
 
+// 单次 vendor HTTP 请求的硬超时（堵无界阻塞 P2 根因：此前裸 fetch 无 timeout，vendor 一 hang
+// 整条生成链 await 死，外部 MCP 端跟着永久转圈）。一次往返足够慢的同步图生成也走得完；异步 vendor
+// 首调返 queued 后由 core.ts 轮询循环（240s/300s）接管，故这里只兜「单次请求别永久挂死」。
+// 可经 NOMI_VENDOR_HTTP_TIMEOUT_MS 调（大模型同步出图慢可调大）。
+const DEFAULT_VENDOR_HTTP_TIMEOUT_MS = 120_000;
+
+function vendorHttpTimeoutMs(): number {
+  const raw = Number(process.env.NOMI_VENDOR_HTTP_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_VENDOR_HTTP_TIMEOUT_MS;
+}
+
 export type VendorErrorStructured = {
   vendorKey: string;
   method: string;
@@ -79,15 +90,24 @@ export async function requestJson(
   const finalUrl = appendQueryParams(url, { ...authQueryParams(vendor, apiKey), ...query });
   const upperMethod = method.toUpperCase();
   const hasBody = upperMethod !== "GET" && upperMethod !== "HEAD" && body != null;
+  const timeoutMs = vendorHttpTimeoutMs();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let response: Response;
   try {
     response = await fetch(finalUrl, {
       method: upperMethod,
       headers,
+      signal: controller.signal,
       ...(hasBody ? { body: typeof body === "string" ? body : JSON.stringify(body) } : {}),
     });
   } catch (error: unknown) {
-    const upstreamMsg = (error instanceof Error ? error.message : String(error)).slice(0, 256);
+    clearTimeout(timer);
+    // abort = 我们的超时，给一条说人话的 timeout 错误（仍归 network 类、可重试），而不是裸 "aborted"。
+    const aborted = error instanceof Error && error.name === "AbortError";
+    const upstreamMsg = aborted
+      ? `请求超时（${Math.round(timeoutMs / 1000)}s 无响应）`
+      : (error instanceof Error ? error.message : String(error)).slice(0, 256);
     throw new VendorRequestError(`Provider request failed (network) at ${vendor.key} ${upperMethod} ${url}: ${upstreamMsg}`, {
       vendorKey: vendor.key,
       method: upperMethod,
@@ -97,7 +117,26 @@ export async function requestJson(
       retryable: true,
     });
   }
-  const text = await response.text();
+  // 超时同样覆盖响应体读取（vendor 可能接了连接却 hang 在 body 上）；读完才清 timer。
+  let text: string;
+  try {
+    text = await response.text();
+  } catch (error: unknown) {
+    const aborted = error instanceof Error && error.name === "AbortError";
+    const upstreamMsg = aborted
+      ? `读取响应超时（${Math.round(timeoutMs / 1000)}s）`
+      : (error instanceof Error ? error.message : String(error)).slice(0, 256);
+    throw new VendorRequestError(`Provider request failed (network) at ${vendor.key} ${upperMethod} ${url}: ${upstreamMsg}`, {
+      vendorKey: vendor.key,
+      method: upperMethod,
+      url,
+      upstreamMsg,
+      category: "network",
+      retryable: true,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
   let json: unknown;
   try {
     json = text ? JSON.parse(text) : null;

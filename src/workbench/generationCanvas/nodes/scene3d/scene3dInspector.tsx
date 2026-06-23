@@ -205,7 +205,7 @@ export function SceneObjectList({
               >
                 {isCrowd ? (
                   <button
-                    className="grid size-6 place-items-center rounded-nomi-sm text-[var(--nomi-ink-45)] hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)]"
+                    className="grid size-6 place-items-center rounded-nomi-sm text-[var(--nomi-ink-40)] hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)]"
                     type="button"
                     title={crowdExpanded ? '收起群众' : '展开群众'}
                     onClick={() => setExpandedCrowds((current) => ({ ...current, [row.id]: !crowdExpanded }))}
@@ -263,7 +263,7 @@ export function SceneObjectList({
                   {row.visible ? <IconEye size={14} /> : <IconEyeOff size={14} />}
                 </button>
                 <button
-                  className="grid size-7 place-items-center rounded-nomi-sm text-[var(--nomi-ink-45)] hover:bg-[var(--workbench-danger-soft)] hover:text-[var(--workbench-danger)] disabled:opacity-40"
+                  className="grid size-7 place-items-center rounded-nomi-sm text-[var(--nomi-ink-40)] hover:bg-[var(--workbench-danger-soft)] hover:text-[var(--workbench-danger)] disabled:opacity-40"
                   disabled={readOnly}
                   type="button"
                   title="删除"
@@ -289,7 +289,7 @@ export function SceneObjectList({
                         title="群众成员不可单独调整"
                         onClick={() => onSelect({ type: 'object', id: row.id })}
                       >
-                        <span className="grid size-6 place-items-center rounded-nomi-sm text-[var(--nomi-ink-45)]">
+                        <span className="grid size-6 place-items-center rounded-nomi-sm text-[var(--nomi-ink-40)]">
                           <IconUser size={13} />
                         </span>
                         <span className="flex min-w-0 items-center gap-2">
@@ -299,7 +299,7 @@ export function SceneObjectList({
                           />
                           <span className="min-w-0 truncate text-caption">{mannequinRoleLabel(roleIndex)}</span>
                         </span>
-                        <span className="justify-self-end rounded-nomi-sm bg-[var(--nomi-ink-05)] px-1.5 py-0.5 text-micro text-[var(--nomi-ink-45)]">
+                        <span className="justify-self-end rounded-nomi-sm bg-[var(--nomi-ink-05)] px-1.5 py-0.5 text-micro text-[var(--nomi-ink-40)]">
                           只读
                         </span>
                       </button>
@@ -369,7 +369,7 @@ function MannequinPosePanel({
           onChange={(event) => updatePoseControl(control, Number(event.currentTarget.value))}
         />
         <input
-          className="h-7 w-full rounded-nomi-sm border border-[var(--nomi-line-soft)] bg-[var(--nomi-ink-05)] px-2 text-center font-mono text-caption text-[var(--nomi-ink)] outline-none focus:border-[var(--nomi-ink-35)] disabled:opacity-50"
+          className="h-7 w-full rounded-nomi-sm border border-[var(--nomi-line-soft)] bg-[var(--nomi-ink-05)] px-2 text-center font-mono text-caption text-[var(--nomi-ink)] outline-none focus:border-[var(--nomi-ink-30)] disabled:opacity-50"
           disabled={readOnly}
           max={max}
           min={min}
@@ -397,7 +397,7 @@ function MannequinPosePanel({
               <button
                 key={preset.id}
                 className={cn(
-                  'h-8 rounded-nomi-sm border border-[var(--nomi-line-soft)] bg-[var(--nomi-ink-05)] px-1 text-caption text-[var(--nomi-ink-70)] transition',
+                  'h-8 rounded-nomi-sm border border-[var(--nomi-line-soft)] bg-[var(--nomi-ink-05)] px-1 text-caption text-[var(--nomi-ink-60)] transition',
                   'hover:bg-[var(--nomi-ink-10)] hover:text-[var(--nomi-ink)] disabled:cursor-not-allowed disabled:opacity-40',
                   active && 'border-[var(--nomi-ink)] bg-[var(--nomi-ink)] text-[var(--nomi-paper)] hover:bg-[var(--nomi-ink)] hover:text-[var(--nomi-paper)]',
                 )}
@@ -421,7 +421,7 @@ function MannequinPosePanel({
               <div className="grid gap-3">
                 {section.groups.map((group) => (
                   <div key={group.title} className="grid gap-2">
-                    <div className="w-fit rounded-nomi-sm bg-[var(--nomi-ink-08)] px-1.5 py-0.5 text-micro font-medium text-[var(--nomi-ink-70)]">
+                    <div className="w-fit rounded-nomi-sm bg-[var(--nomi-ink-10)] px-1.5 py-0.5 text-micro font-medium text-[var(--nomi-ink-60)]">
                       {group.title}
                     </div>
                     <div className="grid gap-2">{group.controls.map(renderControl)}</div>

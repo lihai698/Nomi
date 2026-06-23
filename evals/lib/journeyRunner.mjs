@@ -29,13 +29,16 @@ export function check(label, pass, reason = "", dimension = "behavior") {
 }
 
 /** 里程碑执行后构造给 verify 用的上下文:终态取证都从落盘读,win 仅供 UI 几何/交互态用。 */
-function buildCtx(win, projectDir, iso, baselineNodeIds, repoRoot) {
+function buildCtx(win, projectDir, iso, baselineNodeIds, repoRoot, app = null) {
   const record = () => readProjectPayload(projectDir);
   const canvas = () => record()?.payload?.generationCanvas || { nodes: [], edges: [] };
   const nodes = () => canvas().nodes || [];
   const baseline = new Set(baselineNodeIds);
   return {
     win,
+    // app(Electron 实例,主进程上下文):仅额度门旅程在主进程内解密 app key 调视觉模型时用
+    // (复用 appBridge.chatVision 机制,不另启第二个 app)。普通旅程无需,留 null 安全。
+    app,
     projectDir,
     iso,
     repoRoot,
@@ -93,7 +96,7 @@ export async function runJourneyTrial(repoRoot, journey, { trial = 1, modelPref 
       if (modelPref) await setAssistantModelPref(win, modelPref);
       result.assistantModel = await readAssistantModelLabel(win);
     }
-    const ctx = buildCtx(win, projectDir, iso, baselineNodeIds, repoRoot);
+    const ctx = buildCtx(win, projectDir, iso, baselineNodeIds, repoRoot, app);
 
     for (const milestone of journey.milestones) {
       const mResult = { id: milestone.id, title: milestone.title, checks: [], pass: false };
@@ -128,7 +131,8 @@ export async function runJourneyTrial(repoRoot, journey, { trial = 1, modelPref 
     }
 
     // 旅程级安全兜底:整条会话不得有真实 vendor 生成调用(验「可以生成了」,不真生成)。
-    if (!result.failureReason) {
+    // NOMI_SPEND_OK 下额度门里程碑会合法真生成,跳过本兜底(由该里程碑自己断言)。
+    if (!result.failureReason && !process.env.NOMI_SPEND_OK) {
       const vendorCalls = ctx.events().filter((e) => e.type === "vendor.call.requested").length;
       result.milestones.push({
         id: "_safety",

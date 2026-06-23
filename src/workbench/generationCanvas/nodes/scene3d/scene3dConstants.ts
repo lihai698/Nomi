@@ -86,6 +86,7 @@ export const MOVEMENT_CODES = new Set<string>([
 export const OBJECT_LIMIT = 100
 export const CAMERA_HELPER_FLAG = 'scene3dCameraHelper'
 export const SCENE3D_GRID_FLAG = 'scene3dGridHelper'
+export const SCENE3D_RUNTIME_ID_KEY = 'scene3dId'
 export const FULLSCREEN_Z_INDEX = 2147483647
 export const CAMERA_MARKER_COLOR = '#8b5e34'
 export const CAMERA_MARKER_ACCENT_COLOR = '#a97946'

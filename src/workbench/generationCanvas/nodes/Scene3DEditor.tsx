@@ -204,8 +204,8 @@ function Scene3DEditor({ node, width, height, readOnly = false }: Scene3DEditorP
               <IconCube className="text-nomi-ink-60" size={25} stroke={1.65} />
             </div>
             <div className="text-center">
-              <div className="text-caption font-medium text-nomi-ink-70">点击进入 3D 编辑器</div>
-              <div className="mt-1 text-micro text-nomi-ink-45">摆放模型、相机并输出截图</div>
+              <div className="text-caption font-medium text-nomi-ink-60">点击进入 3D 编辑器</div>
+              <div className="mt-1 text-micro text-nomi-ink-40">摆放模型、相机并输出截图</div>
             </div>
           </div>
         )}
@@ -213,7 +213,7 @@ function Scene3DEditor({ node, width, height, readOnly = false }: Scene3DEditorP
           className={cn(
             'absolute right-3 top-3 grid size-8 place-items-center',
             'rounded-nomi border border-nomi-line-soft',
-            'bg-nomi-paper/[0.82] text-nomi-ink-55 shadow-nomi-sm',
+            'bg-nomi-paper/[0.82] text-nomi-ink-60 shadow-nomi-sm',
             'backdrop-blur-[10px] transition hover:bg-nomi-paper hover:text-nomi-ink',
           )}
           type="button"

@@ -51,11 +51,15 @@ app.on("window", (w) => { wireWin(w); logErr("window", "new window seen"); });
 function pickLiveWin() {
   const live = app.windows().filter((w) => !w.isClosed());
   if (live.length === 0) return win;
+  // 多窗口时优先「打开了项目的 studio 窗口」（hash 含 projectId）——避免粘在项目库/起始窗口，
+  // 根治 eval/shot 落在不同窗口的串台（截图/驱动各打各的）。
+  const proj = live.find((w) => { try { return /projectId=/.test(w.url()); } catch { return false; } });
+  if (proj) return proj;
   const main = live.find((w) => { try { return /studio|library|#\//.test(w.url()); } catch { return false; } });
   return main || live[live.length - 1];
 }
 function getWin() {
-  if (win && !win.isClosed()) return win;
+  // 每次都按活窗口重选（不再缓存可能已关闭/非目标的 win），消除关窗竞态。
   win = pickLiveWin();
   return win;
 }

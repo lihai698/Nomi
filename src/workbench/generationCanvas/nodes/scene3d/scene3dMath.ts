@@ -339,6 +339,24 @@ export function aspectDimensions(aspectRatio: Scene3DAspectRatio): { width: numb
   }
 }
 
+// 运镜参考视频专用：Seedance video_urls 要求参考视频 480P–720P。把全分辨率(1920×1080)按比例缩到
+// 720p 上限(长边不超 1280,短边不超 720,16:9 即 1280×720),既满足 Seedance 又让上传体积更小。
+// 仅运镜捕获路径调用——不动 aspectDimensions(站位定妆图要全分辨率)。
+export function capCameraMoveDimensions(dimensions: { width: number; height: number }): { width: number; height: number } {
+  const MAX_LONG = 1280
+  const MAX_SHORT = 720
+  const { width, height } = dimensions
+  if (width <= 0 || height <= 0) return dimensions
+  const longSide = Math.max(width, height)
+  const shortSide = Math.min(width, height)
+  const scale = Math.min(1, MAX_LONG / longSide, MAX_SHORT / shortSide)
+  if (scale >= 1) return dimensions
+  return {
+    width: Math.max(2, Math.round((width * scale) / 2) * 2),
+    height: Math.max(2, Math.round((height * scale) / 2) * 2),
+  }
+}
+
 export function captureScene(
   gl: THREE.WebGLRenderer,
   scene: THREE.Scene,

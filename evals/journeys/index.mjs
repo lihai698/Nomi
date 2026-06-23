@@ -4,9 +4,11 @@
 import j1 from "./j1-promo.mjs";
 import j3 from "./j3-onboarding.mjs";
 import j5 from "./j5-edit-export.mjs";
+import j6 from "./j6-camera-move.mjs";
 
 // J2(故事→漫画定妆)/ J4(参考图驱动)待补——框架已就绪,按同结构新增即可。
-export const JOURNEYS = [j1, j3, j5];
+// J6(AI 运镜)= agent 驱动:零额度行为层(词表内/外/负样本)+ NOMI_SPEND_OK 门控的端到端生成+VLM 层。
+export const JOURNEYS = [j1, j3, j5, j6];
 
 export function getJourneys({ ids = null, ci = false, smoke = false } = {}) {
   let list = JOURNEYS;

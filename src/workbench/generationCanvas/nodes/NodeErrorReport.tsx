@@ -1,6 +1,7 @@
 import React from 'react'
 import { IconAlertTriangle, IconChevronDown, IconChevronRight, IconRefresh } from '@tabler/icons-react'
 import { cn } from '../../../utils/cn'
+import { WorkbenchButton } from '../../../design'
 import { classifyGenerationError } from '../runner/generationRunController'
 
 /**
@@ -61,7 +62,7 @@ export function NodeErrorReport({ message, onRetry }: { message: string; onRetry
       {/* 服务商真实原话——提到可见区，别再让用户去折叠的「技术详情」里挖（一脸懵逼的根源）。 */}
       {report.providerMessage ? (
         <p className="mt-2 select-text cursor-text rounded-nomi-sm bg-nomi-ink-05 p-2 text-caption leading-relaxed text-nomi-ink-60">
-          <span className="text-nomi-ink-45">服务商原话：</span>
+          <span className="text-nomi-ink-40">服务商原话：</span>
           {report.providerMessage}
         </p>
       ) : null}
@@ -79,23 +80,20 @@ export function NodeErrorReport({ message, onRetry }: { message: string; onRetry
 
       <div className="flex items-center gap-2">
         {onRetry ? (
-          <button
-            type="button"
+          <WorkbenchButton
+            size="sm"
             onClick={handleRetry}
             aria-label="重试生成"
-            className={cn(
-              'inline-flex h-7 items-center gap-1 rounded-nomi-sm px-3 text-caption font-medium text-nomi-paper',
-              'bg-workbench-danger hover:brightness-95',
-            )}
+            className="bg-workbench-danger text-nomi-paper border-0 hover:bg-workbench-danger-soft"
           >
-            <IconRefresh size={13} stroke={1.8} />
+            <IconRefresh size={13} stroke={1.6} />
             重试
-          </button>
+          </WorkbenchButton>
         ) : null}
         <button
           type="button"
           onClick={handleCopy}
-          className="text-caption text-nomi-ink-45 hover:text-nomi-ink"
+          className="text-caption text-nomi-ink-40 hover:text-nomi-ink"
         >
           {copied ? '已复制' : '复制详情'}
         </button>

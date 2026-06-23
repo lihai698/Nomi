@@ -1,6 +1,7 @@
 import React from 'react'
 import type { GenerationCanvasNode, GenerationProvenance } from '../model/generationCanvasTypes'
 import { cn } from '../../../utils/cn'
+import { WorkbenchButton } from '../../../design'
 
 /**
  * Phase E Task E11 — Provenance viewer.
@@ -112,25 +113,13 @@ export default function ProvenancePanel({ node, open, onClose, onRegenerate }: P
 
         <div className="flex items-center justify-end gap-2 mt-5 pt-3 border-t border-nomi-line-soft">
           {provenance && onRegenerate ? (
-            <button
-              type="button"
-              onClick={() => onRegenerate(provenance)}
-              className={cn(
-                'px-3 py-1.5 rounded-nomi-sm text-caption',
-                'bg-nomi-accent text-nomi-paper hover:opacity-90',
-                'transition-opacity duration-150',
-              )}
-            >
+            <WorkbenchButton variant="primary" onClick={() => onRegenerate(provenance)}>
               用相同参数重生成
-            </button>
+            </WorkbenchButton>
           ) : null}
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-3 py-1.5 rounded-nomi-sm text-caption border border-nomi-line text-nomi-ink-80 hover:bg-nomi-bg"
-          >
+          <WorkbenchButton variant="default" onClick={onClose}>
             关闭
-          </button>
+          </WorkbenchButton>
         </div>
       </div>
     </div>

@@ -152,12 +152,12 @@ export default function ImageCropGridOverlay({
 
   const pct = (v: number) => `${v * 100}%`
   const handleClass = cn(
-    'absolute w-3 h-3 -m-1.5 rounded-full bg-white border border-nomi-ink/30',
-    'shadow-[0_1px_4px_rgba(18,24,38,0.3)]',
+    'absolute w-3 h-3 -m-1.5 rounded-full bg-nomi-paper border border-nomi-ink-20',
+    'shadow-nomi-sm',
   )
   const gripClass = cn(
-    'absolute w-3 h-3 rounded-full bg-white border border-nomi-ink/30',
-    'shadow-[0_1px_4px_rgba(18,24,38,0.3)] -translate-x-1/2 -translate-y-1/2',
+    'absolute w-3 h-3 rounded-full bg-nomi-paper border border-nomi-ink-20',
+    'shadow-nomi-sm -translate-x-1/2 -translate-y-1/2',
   )
 
   return (
@@ -177,7 +177,7 @@ export default function ImageCropGridOverlay({
       <div className="absolute right-0 bg-nomi-ink/[0.55] pointer-events-none" style={{ top: pct(rect.y), height: pct(rect.h), width: pct(1 - rect.x - rect.w) }} />
       {/* 选区框 */}
       <div
-        className="absolute border border-white/90 cursor-move"
+        className="absolute border border-nomi-paper/90 cursor-move"
         style={{ left: pct(rect.x), top: pct(rect.y), width: pct(rect.w), height: pct(rect.h) }}
         onPointerDown={beginDrag({ kind: 'move' })}
       >
@@ -189,7 +189,7 @@ export default function ImageCropGridOverlay({
             style={{ left: pct(c) }}
             onPointerDown={beginDrag({ kind: 'col', index })}
           >
-            <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-white/90 pointer-events-none" />
+            <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-nomi-paper/90 pointer-events-none" />
             <span className={cn(gripClass, 'left-1/2 top-1/2 pointer-events-none')} />
           </div>
         ))}
@@ -201,7 +201,7 @@ export default function ImageCropGridOverlay({
             style={{ top: pct(r) }}
             onPointerDown={beginDrag({ kind: 'row', index })}
           >
-            <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-white/90 pointer-events-none" />
+            <span className="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-nomi-paper/90 pointer-events-none" />
             <span className={cn(gripClass, 'left-1/2 top-1/2 pointer-events-none')} />
           </div>
         ))}
@@ -217,11 +217,11 @@ export default function ImageCropGridOverlay({
           type="button"
           aria-label="取消"
           title="取消"
-          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white/95 text-nomi-ink-80 shadow-nomi-md hover:bg-white"
+          className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-nomi-paper text-nomi-ink-80 shadow-nomi-md"
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => { event.stopPropagation(); onCancel() }}
         >
-          <IconX size={16} stroke={2} />
+          <IconX size={16} stroke={1.8} />
         </button>
         <button
           type="button"
@@ -231,7 +231,7 @@ export default function ImageCropGridOverlay({
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => { event.stopPropagation(); onConfirm({ rect, cols, rows }) }}
         >
-          <IconCheck size={16} stroke={2} />
+          <IconCheck size={16} stroke={1.8} />
         </button>
       </div>
     </div>

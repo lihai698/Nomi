@@ -1,16 +1,17 @@
-export { PanelCard, InlinePanel } from './surfaces'
-export type { PanelCardProps, InlinePanelProps } from './surfaces'
 export { ActionCard, DesignButton, IconActionButton, WorkbenchButton, WorkbenchIconButton } from './actions'
 export type { ActionCardProps, DesignButtonProps, IconActionButtonProps, WorkbenchButtonProps, WorkbenchIconButtonProps } from './actions'
 export { DesignBadge, StatusBadge } from './status'
 export type { DesignAlertProps, DesignBadgeProps, DesignProgressProps, StatusBadgeProps, NomiSkeletonProps } from './status'
 export { DesignAlert, DesignProgress, NomiSkeleton } from './status'
+export { DesignEmptyState } from './emptyState'
+export type { DesignEmptyStateProps } from './emptyState'
+export { DesignSearchInput } from './searchInput'
+export type { DesignSearchInputProps } from './searchInput'
 export {
   DesignCheckbox,
   DesignFileInput,
   DesignNumberInput,
   DesignSegmentedControl,
-  DesignSelect,
   DesignSwitch,
   DesignTextInput,
   DesignTextarea,
@@ -20,7 +21,6 @@ export type {
   DesignFileInputProps,
   DesignNumberInputProps,
   DesignSegmentedControlProps,
-  DesignSelectProps,
   DesignSwitchProps,
   DesignTextInputProps,
   DesignTextareaProps,

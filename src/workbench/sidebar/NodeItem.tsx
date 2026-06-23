@@ -51,7 +51,7 @@ export default function NodeItem({ node, active = false, depth = 0, onSelect, on
       style={{ paddingLeft: `${8 + depth * 10}px` }}
       title={node.title || node.id}
     >
-      <span className="grid place-items-center h-4 w-4 shrink-0 rounded bg-nomi-ink-05 text-micro text-nomi-ink-50" aria-hidden>
+      <span className="grid place-items-center h-4 w-4 shrink-0 rounded-nomi-sm bg-nomi-ink-05 text-micro text-nomi-ink-40" aria-hidden>
         {NODE_KIND_LABEL[node.kind] || '节'}
       </span>
       <span className="min-w-0 flex-1 truncate">{node.title || node.id}</span>

@@ -9,6 +9,7 @@
 import { app, session } from 'electron'
 
 import { dispatch, RpcError } from './dispatcher'
+import { createDiskGateway } from './gateway'
 import { runTask, fetchTaskResult } from '../runtime'
 import { verifyToken } from './security'
 import { applySystemProxy } from '../systemProxy'
@@ -47,9 +48,9 @@ async function run(): Promise<number> {
   }
   const method = String(command.method || '')
   const params = command.params && typeof command.params === 'object' ? command.params : {}
-  // headless 永远是工程文件的唯一写者（app 关着时 CLI 才 spawn 它），无「项目正在打开」之说 → 全放行。
+  // headless 永远是工程文件的唯一写者（app 关着时 CLI 才 spawn 它），无运行中渲染层 → 恒磁盘网关。
   try {
-    const result = await dispatch(method, params, { runTask, fetchTaskResult })
+    const result = await dispatch(method, params, { runTask, fetchTaskResult, makeGateway: createDiskGateway })
     emit({ ok: true, result })
     return 0
   } catch (error) {

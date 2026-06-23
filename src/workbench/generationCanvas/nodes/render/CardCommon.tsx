@@ -96,7 +96,7 @@ export function PendingGenerationPlaceholder({
   return (
     <div className="flex w-full h-full flex-col pointer-events-none p-2.5 gap-1 overflow-hidden">
       {shotIndex != null ? (
-        <span className="self-start inline-flex items-center h-[18px] px-[7px] rounded-full bg-nomi-ink text-nomi-paper text-micro font-bold tabular-nums">
+        <span className="self-start inline-flex items-center h-[18px] px-2 rounded-full bg-nomi-ink text-nomi-paper text-micro font-bold tabular-nums">
           镜头 {shotIndex}
         </span>
       ) : null}
@@ -193,7 +193,7 @@ export function placeholderLabel(categoryName: string | undefined, title: string
 /** Scene3DEditor 懒加载期间的占位（React.Suspense fallback）。 */
 export function Scene3DEditorLoading(): JSX.Element {
   return (
-    <div className={cn('flex w-full h-full items-center justify-center bg-nomi-ink-05 text-caption text-nomi-ink-45')}>
+    <div className={cn('flex w-full h-full items-center justify-center bg-nomi-ink-05 text-caption text-nomi-ink-40')}>
       3D 编辑器加载中
     </div>
   )

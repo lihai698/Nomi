@@ -20,6 +20,7 @@ import { cn } from '../../utils/cn'
 import { useWorkbenchStore, type WorkspaceMode } from '../workbenchStore'
 import { useGenerationCanvasStore } from '../generationCanvas/store/generationCanvasStore'
 import { useHasTextModel } from '../library/useHasTextModel'
+import { DesignProgress, WorkbenchButton } from '../../design'
 import { OnboardingSpotlight } from './OnboardingSpotlight'
 import {
   type ChecklistStep,
@@ -181,14 +182,14 @@ export function OnboardingChecklist(): JSX.Element | null {
         aria-label={`上手 4 步，已完成 ${doneCount} / ${ALL_KEYS.length}`}
         aria-expanded={open}
         className={cn(
-          'inline-flex items-center gap-1.5 h-[30px] px-2.5 cursor-pointer font-inherit',
-          'rounded-[var(--nomi-radius-sm)] border border-transparent bg-transparent',
+          'inline-flex items-center gap-1.5 h-8 px-2.5 cursor-pointer font-inherit',
+          'rounded-nomi-sm border border-transparent bg-transparent',
           'text-body-sm text-nomi-ink-80 transition-[background,color] duration-[var(--nomi-transition-fast)]',
           'hover:bg-nomi-ink-05 hover:text-nomi-ink',
           open && 'bg-nomi-ink-05 text-nomi-ink',
         )}
       >
-        <IconListCheck size={15} stroke={1.7} aria-hidden="true" />
+        <IconListCheck size={18} stroke={1.6} aria-hidden="true" />
         <span className="max-[700px]:hidden">上手</span>
         <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-nomi-accent-soft text-nomi-accent text-micro font-semibold tabular-nums">
           {doneCount}/{ALL_KEYS.length}
@@ -223,12 +224,7 @@ export function OnboardingChecklist(): JSX.Element | null {
             </button>
           </header>
 
-          <div className="h-1 mx-4 mb-2 rounded-full bg-nomi-ink-10 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-nomi-accent transition-[width] duration-[var(--nomi-transition-fast)]"
-              style={{ width: `${(doneCount / ALL_KEYS.length) * 100}%` }}
-            />
-          </div>
+          <DesignProgress value={(doneCount / ALL_KEYS.length) * 100} size="xs" className="mx-4 mb-2" />
 
           <ul className="flex flex-col px-1.5 pb-2 m-0 list-none">
             {STEPS.map((step) => {
@@ -269,18 +265,16 @@ export function OnboardingChecklist(): JSX.Element | null {
                     </span>
                   </div>
                   {isNext ? (
-                    <button
-                      type="button"
+                    <WorkbenchButton
+                      variant="primary"
+                      size="sm"
                       onClick={() => goToStep(step.key)}
                       data-take-me-there={step.key}
-                      className={cn(
-                        'self-start ml-[30px] inline-flex items-center gap-1 h-7 px-3 rounded-full border-0 cursor-pointer font-inherit',
-                        'bg-nomi-accent text-nomi-paper text-caption font-medium transition-colors hover:bg-nomi-ink',
-                      )}
+                      className="self-start ml-[30px]"
                     >
                       带我去
                       <IconArrowRight size={13} stroke={1.6} aria-hidden="true" />
-                    </button>
+                    </WorkbenchButton>
                   ) : null}
                 </li>
               )

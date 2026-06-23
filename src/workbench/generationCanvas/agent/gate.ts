@@ -42,6 +42,8 @@ const TOOL_META: Record<string, ToolMeta> = {
   arrange_storyboard_to_timeline: { writes: true },
   // 站位参考:建 scene3d 节点 + 离屏出灰模参考图(零扣费),但写画布有可见副作用→按写操作走确认门(ask)。
   create_staging_reference: { writes: true },
+  // 运镜参考:建 scene3d 节点 + 离屏渲运镜小片(零扣费),但写画布有可见副作用→按写操作走确认门(ask)。
+  create_camera_move: { writes: true },
 }
 
 /**

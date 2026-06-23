@@ -126,7 +126,7 @@ function TextDocumentNodeImpl({ node }: Props): JSX.Element {
                 'inline-grid h-7 w-7 place-items-center rounded-nomi-sm',
                 'text-nomi-ink-60 hover:bg-nomi-ink-05 hover:text-nomi-ink',
                 'data-[active=true]:bg-nomi-accent-soft data-[active=true]:text-nomi-accent',
-                'disabled:cursor-not-allowed disabled:opacity-40',
+                'disabled:cursor-not-allowed disabled:text-nomi-ink-30',
               )}
             >
               {action.icon}
@@ -140,7 +140,7 @@ function TextDocumentNodeImpl({ node }: Props): JSX.Element {
         <header
           className={cn(
             'shrink-0 flex items-center gap-1 h-7 px-2',
-            'border-b border-nomi-line-soft text-nomi-ink-45',
+            'border-b border-nomi-line-soft text-nomi-ink-40',
             'cursor-grab select-none',
           )}
           aria-label="拖动文本节点">
@@ -160,7 +160,7 @@ function TextDocumentNodeImpl({ node }: Props): JSX.Element {
           onKeyUp={(event) => event.stopPropagation()}
           onBlur={() => commitPersistedChange()}>
           {showPlaceholder ? (
-            <span className="pointer-events-none absolute left-8 top-6 text-title leading-[1.76] text-nomi-ink-40">
+            <span className="pointer-events-none absolute left-8 top-6 text-title leading-relaxed text-nomi-ink-40">
               {TEXT_NODE_PLACEHOLDER}
             </span>
           ) : null}

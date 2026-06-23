@@ -1,8 +1,10 @@
-// 能力核 · 接入 Claude Code 的 MCP 配置读写（见 docs/plan/2026-06-21-connect-assistant-card.md）。
+// 能力核 · 接入 MCP 客户端的配置读写（见 docs/plan/2026-06-22-multi-client-mcp-connect.md）。
 //
-// 「一键接入」就靠这一层：算出 nomi-mcp.mjs 的绝对路径 → 把 { command, args } 合并进用户的
-// Claude Code 全局配置 ~/.claude.json 的 mcpServers.nomi。**只写这一个固定文件**（非任意路径写，安全）；
-// 写前自动备份；**合并而非覆盖**（保留用户已有的其它 MCP server，如 cocos-creator）。
+// 「一键接入」就靠这一层：算出 nomi-mcp.mjs 的绝对路径 → 把 nomi 条目合并进各客户端的配置文件。
+// 支持 Claude Code / Codex / Cursor 三个一键，其余助手走 UI 的「复制配置」。
+// 安全口径（三客户端一致）：**只写各自固定文件**（非任意路径写）；写前自动备份；**合并而非覆盖**
+// （保留用户已有的其它 MCP server）；原子写（tmp→rename）。
+// Codex 是 TOML，用块级文本合并（按 [表头] 边界只换我们自己的 [mcp_servers.nomi] 块），不引 TOML 依赖（P1）。
 import { app } from 'electron'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -11,91 +13,196 @@ import { readToken } from './security'
 
 const SERVER_NAME = 'nomi'
 
-function claudeConfigPath(): string {
-  return path.join(os.homedir(), '.claude.json')
+export type McpClientKey = 'claude' | 'codex' | 'cursor'
+
+type ClientSpec = {
+  label: string
+  format: 'json' | 'toml'
+  /** 配置文件绝对路径。 */
+  configPath: () => string
 }
 
-/** nomi MCP server 在 ~/.claude.json 里的条目。dev 下脚本在 repo；打包入口是后续切片。 */
+const CLIENTS: Record<McpClientKey, ClientSpec> = {
+  claude: { label: 'Claude Code', format: 'json', configPath: () => path.join(os.homedir(), '.claude.json') },
+  cursor: { label: 'Cursor', format: 'json', configPath: () => path.join(os.homedir(), '.cursor', 'mcp.json') },
+  codex: { label: 'Codex', format: 'toml', configPath: () => path.join(os.homedir(), '.codex', 'config.toml') },
+}
+
+function resolveClient(client?: string): McpClientKey {
+  return client === 'codex' || client === 'cursor' ? client : 'claude'
+}
+
+/** nomi MCP server 条目。dev 下脚本在 repo；打包入口是后续切片。三客户端共用。 */
 function mcpServerEntry(): { command: string; args: string[] } {
   const script = path.join(app.getAppPath(), 'scripts', 'nomi-mcp.mjs')
   return { command: 'node', args: [script] }
 }
 
-function readClaudeConfig(): Record<string, unknown> {
+function ensureDir(filePath: string): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true })
+}
+
+function atomicWrite(target: string, content: string): string | null {
+  ensureDir(target)
+  let backupPath: string | null = null
+  if (fs.existsSync(target)) {
+    backupPath = `${target}.nomi-backup`
+    fs.copyFileSync(target, backupPath)
+  }
+  const tmp = `${target}.nomi-tmp`
+  fs.writeFileSync(tmp, content, 'utf8')
+  fs.renameSync(tmp, target)
+  return backupPath
+}
+
+// ── JSON 客户端（Claude Code / Cursor）：root.mcpServers.nomi ─────────────
+
+function readJsonConfig(target: string): Record<string, unknown> {
   try {
-    const raw = fs.readFileSync(claudeConfigPath(), 'utf8')
-    const parsed = JSON.parse(raw)
+    const parsed = JSON.parse(fs.readFileSync(target, 'utf8'))
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {}
   } catch {
     return {}
   }
 }
 
-function isInstalled(config: Record<string, unknown>): boolean {
-  const servers = config.mcpServers
+function jsonInstalled(target: string): boolean {
+  const servers = readJsonConfig(target).mcpServers
   return Boolean(servers && typeof servers === 'object' && (servers as Record<string, unknown>)[SERVER_NAME])
 }
 
-export type McpInfo = {
-  tokenReady: boolean
-  rpcRunning: boolean
-  installed: boolean
-  configPath: string
-  /** 给「复制配置」用的、拼好的 mcpServers 片段（带 nomi 条目）。 */
-  snippet: string
-  server: { command: string; args: string[] }
+function jsonSnippet(server: { command: string; args: string[] }): string {
+  return JSON.stringify({ mcpServers: { [SERVER_NAME]: server } }, null, 2)
 }
 
-/** 读接入状态 + 配置片段。rpcPort 由调用方（appIntegration）传入（它持有 RPC handle）。 */
-export function readMcpInfo(rpcPort: number | null): McpInfo {
-  const config = readClaudeConfig()
-  const server = mcpServerEntry()
-  return {
-    tokenReady: readToken() !== null,
-    rpcRunning: typeof rpcPort === 'number' && rpcPort > 0,
-    installed: isInstalled(config),
-    configPath: claudeConfigPath(),
-    snippet: JSON.stringify({ mcpServers: { [SERVER_NAME]: server } }, null, 2),
-    server,
-  }
-}
-
-/**
- * 一键写入：备份 → 合并 mcpServers.nomi（保留其它 server）→ 原子写回。
- * 备份固定名 ~/.claude.json.nomi-backup（每次覆盖；目的是「写坏了能回退一版」，不做历史堆积）。
- */
-export function installMcp(): { ok: boolean; configPath: string; backupPath: string | null } {
-  const target = claudeConfigPath()
-  let backupPath: string | null = null
-  if (fs.existsSync(target)) {
-    backupPath = `${target}.nomi-backup`
-    fs.copyFileSync(target, backupPath)
-  }
-  const config = readClaudeConfig()
+function jsonInstall(target: string): string | null {
+  const backupPath = fs.existsSync(target) ? `${target}.nomi-backup` : null
+  const config = readJsonConfig(target)
   const servers = (config.mcpServers && typeof config.mcpServers === 'object' && !Array.isArray(config.mcpServers)
     ? (config.mcpServers as Record<string, unknown>)
     : {}) as Record<string, unknown>
   servers[SERVER_NAME] = mcpServerEntry()
   config.mcpServers = servers
-  // 原子写：先写临时文件再 rename，避免写一半把用户配置写坏。
-  const tmp = `${target}.nomi-tmp`
-  fs.writeFileSync(tmp, JSON.stringify(config, null, 2), 'utf8')
-  fs.renameSync(tmp, target)
-  return { ok: true, configPath: target, backupPath }
+  atomicWrite(target, JSON.stringify(config, null, 2))
+  return backupPath
 }
 
-/** 撤销接入：删 mcpServers.nomi（不碰其它 server），写回。文件不存在/没装就当成功。 */
-export function uninstallMcp(): { ok: boolean } {
-  const target = claudeConfigPath()
-  if (!fs.existsSync(target)) return { ok: true }
-  const config = readClaudeConfig()
+function jsonUninstall(target: string): void {
+  if (!fs.existsSync(target)) return
+  const config = readJsonConfig(target)
   const servers = config.mcpServers as Record<string, unknown> | undefined
   if (servers && typeof servers === 'object' && servers[SERVER_NAME]) {
     delete servers[SERVER_NAME]
     config.mcpServers = servers
-    const tmp = `${target}.nomi-tmp`
-    fs.writeFileSync(tmp, JSON.stringify(config, null, 2), 'utf8')
-    fs.renameSync(tmp, target)
+    atomicWrite(target, JSON.stringify(config, null, 2))
   }
-  return { ok: true }
+}
+
+// ── TOML 客户端（Codex）：[mcp_servers.nomi]，块级合并不引依赖 ──────────────
+
+const CODEX_HEADER_RE = /^\s*\[mcp_servers\.nomi\]\s*$/
+
+function tomlEscape(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+}
+
+function codexBlock(server: { command: string; args: string[] }): string {
+  const args = server.args.map((arg) => `"${tomlEscape(arg)}"`).join(', ')
+  return `[mcp_servers.${SERVER_NAME}]\ncommand = "${tomlEscape(server.command)}"\nargs = [${args}]\n`
+}
+
+function readText(target: string): string {
+  try {
+    return fs.readFileSync(target, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
+function codexInstalled(target: string): boolean {
+  return readText(target).split('\n').some((line) => CODEX_HEADER_RE.test(line))
+}
+
+/** 删掉现有 [mcp_servers.nomi] 块（从该表头到下一个 [表头] 或 EOF），其它内容原样保留。 */
+function removeCodexBlock(text: string): string {
+  const out: string[] = []
+  let skipping = false
+  for (const line of text.split('\n')) {
+    if (CODEX_HEADER_RE.test(line)) {
+      skipping = true
+      continue
+    }
+    if (skipping && /^\s*\[/.test(line)) skipping = false
+    if (!skipping) out.push(line)
+  }
+  return out.join('\n')
+}
+
+function codexInstall(target: string): string | null {
+  const backupPath = fs.existsSync(target) ? `${target}.nomi-backup` : null
+  const base = removeCodexBlock(readText(target)).replace(/\s*$/, '')
+  const next = (base ? `${base}\n\n` : '') + codexBlock(mcpServerEntry())
+  atomicWrite(target, next)
+  return backupPath
+}
+
+function codexUninstall(target: string): void {
+  if (!fs.existsSync(target)) return
+  if (!codexInstalled(target)) return
+  const next = removeCodexBlock(readText(target)).replace(/\s*$/, '') + '\n'
+  atomicWrite(target, next)
+}
+
+// ── 对外 API ───────────────────────────────────────────────────────────
+
+export type McpClientInfo = { installed: boolean; configPath: string; snippet: string }
+
+export type McpInfo = {
+  tokenReady: boolean
+  rpcRunning: boolean
+  server: { command: string; args: string[] }
+  /** 每个可一键接入的客户端的状态 + 可复制片段（卡片据此显示 + 默认选已接入的）。 */
+  clients: Record<McpClientKey, McpClientInfo>
+}
+
+function clientInfo(client: McpClientKey, server: { command: string; args: string[] }): McpClientInfo {
+  const spec = CLIENTS[client]
+  const target = spec.configPath()
+  const installed = spec.format === 'toml' ? codexInstalled(target) : jsonInstalled(target)
+  const snippet = spec.format === 'toml' ? codexBlock(server) : jsonSnippet(server)
+  return { installed, configPath: target, snippet }
+}
+
+/** 读接入状态 + 各客户端配置片段。rpcPort 由调用方（appIntegration）传入。 */
+export function readMcpInfo(rpcPort: number | null): McpInfo {
+  const server = mcpServerEntry()
+  return {
+    tokenReady: readToken() !== null,
+    rpcRunning: typeof rpcPort === 'number' && rpcPort > 0,
+    server,
+    clients: {
+      claude: clientInfo('claude', server),
+      codex: clientInfo('codex', server),
+      cursor: clientInfo('cursor', server),
+    },
+  }
+}
+
+/** 一键写入指定客户端：备份 → 合并 nomi 条目（保留其它）→ 原子写回。默认 Claude Code。 */
+export function installMcp(client?: string): { ok: boolean; client: McpClientKey; configPath: string; backupPath: string | null } {
+  const key = resolveClient(client)
+  const spec = CLIENTS[key]
+  const target = spec.configPath()
+  const backupPath = spec.format === 'toml' ? codexInstall(target) : jsonInstall(target)
+  return { ok: true, client: key, configPath: target, backupPath }
+}
+
+/** 撤销接入指定客户端：删 nomi 条目（不碰其它）。文件不存在/没装就当成功。默认 Claude Code。 */
+export function uninstallMcp(client?: string): { ok: boolean; client: McpClientKey } {
+  const key = resolveClient(client)
+  const spec = CLIENTS[key]
+  const target = spec.configPath()
+  if (spec.format === 'toml') codexUninstall(target)
+  else jsonUninstall(target)
+  return { ok: true, client: key }
 }

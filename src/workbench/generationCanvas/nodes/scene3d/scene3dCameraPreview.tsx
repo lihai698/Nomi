@@ -1,17 +1,12 @@
 import React from 'react'
 import * as THREE from 'three'
 import { Canvas, useThree } from '@react-three/fiber'
-import { Sky } from '@react-three/drei'
+import { Environment, Sky } from '@react-three/drei'
 import { IconCamera, IconEye, IconRotate } from '@tabler/icons-react'
 import { cn } from '../../../../utils/cn'
 import { applySceneCameraPose, crowdCount } from './scene3dMath'
 import { SCENE3D_ASPECT_OPTIONS, SCENE3D_ASPECT_RATIOS } from './scene3dTypes'
 import type { Scene3DAspectRatio, Scene3DCamera, Scene3DObject, Scene3DState } from './scene3dTypes'
-import {
-  cameraWithPlaybackPosition,
-  objectWithPlaybackPose,
-  playbackCameraAtPlayhead,
-} from './scene3dPlayback'
 import {
   Scene3DMeshGeometry,
   ProceduralMannequin,
@@ -20,7 +15,11 @@ import {
   LightObject,
   MannequinAssetBoundary,
 } from './scene3dObjects'
-import { Scene3DLocalEnvironmentLights } from './scene3dEnvironment'
+import {
+  cameraWithPlaybackPosition,
+  objectWithPlaybackPose,
+  playbackCameraAtPlayhead,
+} from './scene3dPlayback'
 import { clampRatio, useScene3DTrajectoryRuntimeStore } from './trajectory'
 
 export function cameraPreviewViewportStyle(aspectRatio: Scene3DAspectRatio): React.CSSProperties {
@@ -104,8 +103,12 @@ export function CameraPreviewScene({
     <>
       <color attach="background" args={[state.environment.backgroundColor]} />
       <ambientLight intensity={0.65} />
-      <Scene3DLocalEnvironmentLights darkMode={state.environment.darkMode} />
       {state.environment.showSky ? <Sky sunPosition={[2, 1, 4]} /> : null}
+      {state.environment.preset ? (
+        <React.Suspense fallback={null}>
+          <Environment preset="city" />
+        </React.Suspense>
+      ) : null}
       {state.environment.showAxes ? <axesHelper args={[2]} /> : null}
       {state.objects.map((object) => {
         const roleStartIndex = roleIndex
@@ -248,7 +251,7 @@ export function CameraPreview({
           value={lensDepth}
           onChange={(event) => onLensDepthChange(Number(event.currentTarget.value))}
         />
-        <div className="mt-1 grid grid-cols-3 text-micro text-[var(--nomi-ink-45)]">
+        <div className="mt-1 grid grid-cols-3 text-micro text-[var(--nomi-ink-40)]">
           <span>-100%</span>
           <span className="text-center">0</span>
           <span className="text-right">100%</span>

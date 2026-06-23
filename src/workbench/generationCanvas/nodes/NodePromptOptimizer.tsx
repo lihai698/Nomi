@@ -7,7 +7,7 @@
 import React from 'react'
 import { IconX } from '@tabler/icons-react'
 import { cn } from '../../../utils/cn'
-import { NomiLogoMark } from '../../../design'
+import { NomiLogoMark, WorkbenchButton } from '../../../design'
 import { getTextBrain } from '../../api/promptLibraryApi'
 import { runWorkbenchTextTaskStream } from '../../api/taskApi'
 import { useGenerationCanvasStore } from '../store/generationCanvasStore'
@@ -120,20 +120,12 @@ export function NodePromptOptimizer({ node, isVideo }: { node: GenerationCanvasN
                 ))}
               </div>
               <div className={cn('mt-2 flex gap-2')}>
-                <button
-                  type="button"
-                  className={cn('flex-1 h-8 rounded-full cursor-pointer border-0 text-caption font-semibold', 'bg-nomi-ink text-nomi-paper hover:bg-nomi-accent transition-[background] duration-[var(--nomi-transition-fast)]')}
-                  onClick={apply}
-                >
+                <WorkbenchButton variant="primary" className="flex-1" onClick={apply}>
                   应用到提示词
-                </button>
-                <button
-                  type="button"
-                  className={cn('h-8 px-3 rounded-full cursor-pointer border border-nomi-line bg-transparent text-caption text-nomi-ink-80 hover:bg-nomi-ink-05')}
-                  onClick={() => void run()}
-                >
+                </WorkbenchButton>
+                <WorkbenchButton variant="default" onClick={() => void run()}>
                   重新优化
-                </button>
+                </WorkbenchButton>
               </div>
             </>
           ) : running ? (
@@ -151,28 +143,23 @@ export function NodePromptOptimizer({ node, isVideo }: { node: GenerationCanvasN
                 onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void run() }}
               />
               {error ? <div className={cn('mt-1.5 text-micro text-workbench-danger')}>{error}</div> : null}
-              <button
-                type="button"
-                className={cn('mt-2 w-full h-8 rounded-full cursor-pointer border-0 text-caption font-semibold', 'bg-nomi-ink text-nomi-paper hover:bg-nomi-accent transition-[background] duration-[var(--nomi-transition-fast)]')}
-                onClick={() => void run()}
-              >
+              <WorkbenchButton variant="primary" className="mt-2 w-full" onClick={() => void run()}>
                 优化这条提示词
-              </button>
+              </WorkbenchButton>
             </>
           )}
         </div>
       ) : null}
 
-      <button
-        type="button"
-        className={cn('inline-flex items-center gap-1.5 h-[30px] px-2.5 rounded-full cursor-pointer', 'border border-nomi-line bg-nomi-paper text-nomi-ink-80 text-caption', 'hover:border-nomi-accent hover:text-nomi-ink transition-[border-color,color] duration-[var(--nomi-transition-fast)]')}
+      <WorkbenchButton
+        variant="default"
         aria-label="用 Nomi 优化提示词"
         title="用 Nomi 优化提示词"
         onClick={toggle}
       >
-        {open ? <IconX size={14} stroke={1.8} /> : <NomiLogoMark size={14} />}
+        {open ? <IconX size={14} stroke={1.6} /> : <NomiLogoMark size={14} />}
         {running ? '优化中…' : '优化'}
-      </button>
+      </WorkbenchButton>
     </div>
   )
 }

@@ -36,10 +36,12 @@ export default function StoryboardPlanCard(): JSX.Element | null {
     if (ok) discardStoryboardPlan()
   }
 
+  // 状态徽标用 Nomi 品牌色(草稿/编辑=暖 accent、已落=success)。StatusBadge 是 Mantine
+  // gray/blue/green，非品牌色 → 这里保留手写品牌 chip(2026-06-22 回归核对:别让品牌色被压成通用灰蓝)。
   const badge = editorOpen
     ? { label: '编辑中', cls: 'bg-nomi-accent-soft text-nomi-accent' }
     : committed
-      ? { label: '已落画布', cls: 'bg-[var(--workbench-success-soft)] text-[var(--workbench-success)]' }
+      ? { label: '已落画布', cls: 'bg-workbench-success-soft text-workbench-success' }
       : { label: '草稿', cls: 'bg-nomi-accent-soft text-nomi-accent' }
 
   return (
@@ -52,7 +54,7 @@ export default function StoryboardPlanCard(): JSX.Element | null {
     >
       <div className="flex items-center gap-2 min-w-0">
         {committed && !editorOpen
-          ? <IconCircleCheck size={15} stroke={1.6} className="shrink-0 text-[var(--workbench-success)]" />
+          ? <IconCircleCheck size={15} stroke={1.6} className="shrink-0 text-workbench-success" />
           : <IconMovie size={15} stroke={1.6} className="shrink-0 text-nomi-ink-60" />}
         <span className="min-w-0 flex-1 truncate text-body-sm font-medium text-nomi-ink">{title}</span>
         <span className={cn('shrink-0 text-micro px-2 py-0.5 rounded-full leading-relaxed', badge.cls)}>{badge.label}</span>
@@ -97,7 +99,7 @@ export default function StoryboardPlanCard(): JSX.Element | null {
             <button
               type="button"
               onClick={onDiscard}
-              className="ml-auto text-caption text-nomi-ink-40 hover:text-[var(--workbench-danger)]"
+              className="ml-auto text-caption text-nomi-ink-40 hover:text-workbench-danger"
             >
               丢弃
             </button>

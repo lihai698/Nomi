@@ -90,6 +90,28 @@ export function archetypeForNode(node: GenerationCanvasNode): ModelArchetype | n
   return null
 }
 
+/**
+ * 这个档案有没有「参考视频」槽,有的话该用哪个模式(运镜参考喂入用)。纯函数,可单测。
+ * 返回第一个声明了 `video_ref` 槽的模式的 id + 该槽的 meta 存储键(referenceVideoUrls)+ API 输入键;
+ * 没有任何模式吃参考视频 → null(降级成 prompt floor)。从 archetype 派生,不写死任何 model 字符串。
+ */
+export function findVideoRefMode(
+  archetype: ModelArchetype | null,
+): { modeId: string; metaKey: string; inputKey: string } | null {
+  if (!archetype) return null
+  for (const mode of archetype.modes) {
+    const slot = mode.slots.find((s) => s.kind === 'video_ref')
+    if (slot) {
+      return {
+        modeId: mode.id,
+        metaKey: 'referenceVideoUrls',
+        inputKey: slot.inputKey ?? 'reference_video_urls',
+      }
+    }
+  }
+  return null
+}
+
 /** 目标模型跨所有模式声明过的参考槽种类(union);无档案 → null(放行,不校验)。 */
 function targetSlotKinds(node: GenerationCanvasNode): Set<ArchetypeReferenceSlotKind> | null {
   const archetype = archetypeForNode(node)

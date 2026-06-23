@@ -413,34 +413,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        app: {
-          bg: 'var(--tc-color-app-bg)',
-          'bg-strong': 'var(--tc-color-app-bg-strong)',
-        },
-        surface: {
-          DEFAULT: 'var(--tc-color-surface)',
-          raised: 'var(--tc-color-surface-raised)',
-          subtle: 'var(--tc-color-surface-subtle)',
-          inline: 'var(--tc-color-surface-inline)',
-          'inline-weak': 'var(--tc-color-surface-inline-weak)',
-        },
-        border: {
-          subtle: 'var(--tc-color-border-subtle)',
-          strong: 'var(--tc-color-border-strong)',
-        },
-        text: {
-          primary: 'var(--tc-color-text-primary)',
-          secondary: 'var(--tc-color-text-secondary)',
-          tertiary: 'var(--tc-color-text-tertiary)',
-        },
-        accent: {
-          blue: 'var(--tc-color-accent-blue)',
-          cyan: 'var(--tc-color-accent-cyan)',
-        },
-        success: 'var(--tc-color-success)',
-        warning: 'var(--tc-color-warning)',
-        danger: 'var(--tc-color-danger)',
-        info: 'var(--tc-color-info)',
+        // 旧 --tc-color-* 暗色层已删(§14.1)+ 4 个过渡键的最后消费者(PanoramaViewer/dead surfaces)
+        // 已收口到 --nomi-* 类，过渡键随之删净。新增颜色一律进 nomi-tokens.css 的 --nomi-*。
         nomi: {
           bg: 'var(--nomi-bg)',
           paper: 'var(--nomi-paper)',
@@ -486,46 +460,31 @@ export default {
           'code-bg': 'var(--workbench-code-bg)',
           'code-ink': 'var(--workbench-code-ink)',
         },
-        handle: {
-          image: 'var(--handle-color-image)',
-          audio: 'var(--handle-color-audio)',
-          subtitle: 'var(--handle-color-subtitle)',
-          video: 'var(--handle-color-video)',
-          character: 'var(--handle-color-character)',
-          any: 'var(--handle-color-any)',
-          surface: 'var(--handle-surface)',
-          border: 'var(--handle-border)',
-        },
       },
       borderRadius: {
-        sharp: 'var(--tc-radius-sharp)',
-        field: 'var(--tc-radius-field)',
-        panel: 'var(--tc-radius-panel)',
-        modal: 'var(--tc-radius-modal)',
-        pill: 'var(--tc-radius-pill)',
+        // 旧 --tc-radius-* 已删(§14.1)；恢复为字面值（与 nomiTheme.ts nomiDesignTokens.radius 一致）。
+        sharp: '0px',
+        field: '6px',
+        panel: '10px',
+        modal: '14px',
+        pill: '999px',
         nomi: 'var(--nomi-radius)',
         'nomi-sm': 'var(--nomi-radius-sm)',
         'nomi-lg': 'var(--nomi-radius-lg)',
         workbench: 'var(--workbench-radius)',
         'workbench-control': 'var(--workbench-control-radius)',
       },
-      spacing: {
-        'tc-1': 'var(--tc-space-1)',
-        'tc-2': 'var(--tc-space-2)',
-        'tc-3': 'var(--tc-space-3)',
-        'tc-4': 'var(--tc-space-4)',
-        'tc-5': 'var(--tc-space-5)',
-        'tc-6': 'var(--tc-space-6)',
-      },
       fontSize: {
-        micro: 'var(--tc-font-size-micro)',
-        body: 'var(--tc-font-size-body)',
-        'body-sm': 'var(--tc-font-size-body-sm)',
-        caption: 'var(--tc-font-size-caption)',
-        title: 'var(--tc-font-size-title)',
-        h2: 'var(--tc-font-size-h2)',
-        h1: 'var(--tc-font-size-h1)',
-        display: 'var(--tc-font-size-display)',
+        // 旧 --tc-font-size-* 已删(§14.1)；恢复为字面值（与 nomiTheme.ts nomiDesignTokens.fontSize 一致）。
+        // 仅 font-size、不带 line-height，与原 --tc-* 行为一致，避免改动既有布局。
+        micro: '11px',
+        body: '14px',
+        'body-sm': '13px',
+        caption: '12px',
+        title: '16px',
+        h2: '20px',
+        h1: '24px',
+        display: '28px',
       },
       fontFamily: {
         'nomi-sans': 'var(--nomi-font-sans)',

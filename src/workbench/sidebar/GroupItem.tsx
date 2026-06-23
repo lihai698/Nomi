@@ -3,6 +3,9 @@ import { cn } from '../../utils/cn'
 import type { GenerationCanvasNode, NodeGroup } from '../generationCanvas/model/generationCanvasTypes'
 import NodeItem from './NodeItem'
 
+// 用户子组未指定颜色时的默认色点底色（暖灰半透明，与品牌一致）。
+const DEFAULT_GROUP_TINT = 'rgba(160,132,90,0.18)'
+
 type Props = {
   group: NodeGroup
   nodes: GenerationCanvasNode[]
@@ -54,7 +57,7 @@ export default function GroupItem({ group, nodes, selectedNodeIds, editing = fal
 
   return (
     <div
-      className={cn('rounded-nomi-sm border border-nomi-line/70 bg-white/35', dragOver && 'ring-2 ring-nomi-accent/60')}
+      className={cn('rounded-nomi-sm border border-nomi-line/70 bg-nomi-paper/35', dragOver && 'ring-2 ring-nomi-accent/60')}
       onDragOver={handleDragOver}
       onDragLeave={() => setDragOver(false)}
       onDrop={handleDrop}
@@ -64,7 +67,7 @@ export default function GroupItem({ group, nodes, selectedNodeIds, editing = fal
           <span className="w-3 text-micro text-nomi-ink-40" aria-hidden>{expanded ? '▾' : '▸'}</span>
           <span
             className="h-2.5 w-2.5 rounded-full border border-nomi-line shrink-0"
-            style={{ backgroundColor: group.color || 'rgba(160, 132, 90, 0.18)' }}
+            style={{ backgroundColor: group.color || DEFAULT_GROUP_TINT }}
             aria-hidden
           />
           <input
@@ -98,7 +101,7 @@ export default function GroupItem({ group, nodes, selectedNodeIds, editing = fal
           <span className="w-3 text-micro text-nomi-ink-40" aria-hidden>{expanded ? '▾' : '▸'}</span>
           <span
             className="h-2.5 w-2.5 rounded-full border border-nomi-line shrink-0"
-            style={{ backgroundColor: group.color || 'rgba(160, 132, 90, 0.18)' }}
+            style={{ backgroundColor: group.color || DEFAULT_GROUP_TINT }}
             aria-hidden
           />
           <span className="min-w-0 flex-1 truncate">{group.name}</span>

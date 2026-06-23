@@ -127,7 +127,7 @@ export default function StoryboardShotCard(props: Props): JSX.Element {
                 onClick={() => onToggleAnchor(id)}
                 className="grid place-items-center size-4 rounded-full text-nomi-ink-40 hover:bg-nomi-ink-20 hover:text-nomi-ink-80"
               >
-                <IconX size={11} stroke={2} aria-hidden />
+                <IconX size={11} stroke={1.8} aria-hidden />
               </button>
             </span>
           )

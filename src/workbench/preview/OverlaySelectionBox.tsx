@@ -121,7 +121,7 @@ export default function OverlaySelectionBox({
             'workbench-overlay-selection__handle',
             'absolute w-[10px] h-[10px] rounded-nomi-sm touch-none',
             'border-[1.5px] border-[var(--nomi-accent)] bg-[var(--nomi-paper)]',
-            'shadow-[0_1px_2px_oklch(0_0_0/0.18)]',
+            'shadow-nomi-sm',
             HANDLE_POS[key],
           )}
           onPointerDown={beginHandleScale}

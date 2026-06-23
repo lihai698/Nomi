@@ -14,14 +14,7 @@ import {
   type GenerateInput,
   type RunTaskFn,
 } from './core'
-
-/** 会改盘的方法——app 开着时对「正在打开的项目」要拒绝（A/B 守卫，见 rpcServer）。 */
-export const MUTATION_METHODS = new Set([
-  'canvas.addNodes',
-  'canvas.connect',
-  'canvas.setPrompt',
-  'canvas.deleteNodes',
-])
+import type { ProjectGateway } from './gateway'
 
 export class RpcError extends Error {
   constructor(message: string, readonly httpStatus: number) {
@@ -33,7 +26,15 @@ export function projectIdOf(params: Record<string, unknown>): string {
   return typeof params.projectId === 'string' ? params.projectId : ''
 }
 
-export type DispatchContext = { runTask: RunTaskFn; fetchTaskResult?: FetchTaskResultFn }
+/**
+ * makeGateway：按 projectId 解析该用哪个网关——A 模式（app 开着且该项目正打开）→ 渲染层网关（实时）；
+ * 否则 → 磁盘网关（直写盘）。rpcServer 据 isProjectOpen + 渲染层可达性提供；headless host 恒磁盘网关。
+ */
+export type DispatchContext = {
+  runTask: RunTaskFn
+  fetchTaskResult?: FetchTaskResultFn
+  makeGateway: (projectId: string) => ProjectGateway
+}
 
 export async function dispatch(method: string, params: Record<string, unknown>, ctx: DispatchContext): Promise<unknown> {
   switch (method) {
@@ -46,22 +47,22 @@ export async function dispatch(method: string, params: Record<string, unknown>, 
     case 'models.list':
       return { models: listAvailableModels() }
     case 'canvas.read':
-      return readProjectCanvas(projectIdOf(params))
+      return readProjectCanvas(ctx.makeGateway(projectIdOf(params)))
     case 'canvas.addNodes':
-      return addProjectNodes(projectIdOf(params), Array.isArray(params.nodes) ? (params.nodes as never[]) : [])
+      return addProjectNodes(ctx.makeGateway(projectIdOf(params)), Array.isArray(params.nodes) ? (params.nodes as never[]) : [])
     case 'canvas.connect':
-      return connectProjectNodes(projectIdOf(params), Array.isArray(params.connections) ? (params.connections as never[]) : [])
+      return connectProjectNodes(ctx.makeGateway(projectIdOf(params)), Array.isArray(params.connections) ? (params.connections as never[]) : [])
     case 'canvas.setPrompt':
       return setProjectNodePrompt(
-        projectIdOf(params),
+        ctx.makeGateway(projectIdOf(params)),
         String(params.nodeId || ''),
         String(params.prompt || ''),
         typeof params.title === 'string' ? params.title : undefined,
       )
     case 'canvas.deleteNodes':
-      return deleteProjectNodes(projectIdOf(params), Array.isArray(params.nodeIds) ? (params.nodeIds as string[]) : [])
+      return deleteProjectNodes(ctx.makeGateway(projectIdOf(params)), Array.isArray(params.nodeIds) ? (params.nodeIds as string[]) : [])
     case 'generate':
-      return generateOnProject(params as unknown as GenerateInput, ctx.runTask, ctx.fetchTaskResult)
+      return generateOnProject(params as unknown as GenerateInput, ctx.makeGateway(projectIdOf(params)), ctx.runTask, ctx.fetchTaskResult)
     default:
       throw new RpcError(`未知方法: ${method}`, 404)
   }

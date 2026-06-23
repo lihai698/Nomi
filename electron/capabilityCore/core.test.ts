@@ -13,6 +13,7 @@ import {
   readProjectCanvas,
   setProjectNodePrompt,
 } from './core'
+import { createDiskGateway } from './gateway'
 
 const tempRoots: string[] = []
 let mockedDocumentsRoot = ''
@@ -47,40 +48,42 @@ afterEach(() => {
   }
 })
 
-describe('capabilityCore/core (B 模式：直写 project.json)', () => {
-  it('建项目 → 加节点 → 连线 → 改提示词 → 读画布，全程落盘且重读一致', () => {
+describe('capabilityCore/core (磁盘网关：直写 project.json)', () => {
+  it('建项目 → 加节点 → 连线 → 改提示词 → 读画布，全程落盘且重读一致', async () => {
     const project = createNamedProject('能力核测试项目')
     expect(project.id).toBeTruthy()
     expect(listAllProjects().some((item) => item.id === project.id)).toBe(true)
+    const gateway = createDiskGateway(project.id)
 
-    const { ids } = addProjectNodes(project.id, [
+    const { ids } = await addProjectNodes(gateway, [
       { kind: 'text', prompt: '一句产品脚本' },
       { kind: 'image', title: '镜头 1' },
     ])
     expect(ids).toHaveLength(2)
 
-    const connected = connectProjectNodes(project.id, [{ source: ids[0], target: ids[1], mode: 'reference' }])
+    const connected = await connectProjectNodes(gateway, [{ source: ids[0], target: ids[1], mode: 'reference' }])
     expect(connected.edgeIds).toHaveLength(1)
     expect(connected.skipped).toHaveLength(0)
 
-    const prompted = setProjectNodePrompt(project.id, ids[1], '电影感写实，黄昏光线')
+    const prompted = await setProjectNodePrompt(gateway, ids[1], '电影感写实，黄昏光线')
     expect(prompted.changed).toBe(true)
 
     // 重新读（从盘）—— 验证持久化往返一致。
-    const canvas = readProjectCanvas(project.id)
+    const canvas = await readProjectCanvas(createDiskGateway(project.id))
     expect(canvas.nodes).toHaveLength(2)
     expect(canvas.edges).toHaveLength(1)
     const shot = canvas.nodes.find((node) => node.id === ids[1])
     expect(shot?.prompt).toBe('电影感写实，黄昏光线')
   })
 
-  it('删节点连带清边，落盘后边为空', () => {
+  it('删节点连带清边，落盘后边为空', async () => {
     const project = createNamedProject('删节点测试')
-    const { ids } = addProjectNodes(project.id, [{ kind: 'image' }, { kind: 'video' }])
-    connectProjectNodes(project.id, [{ source: ids[0], target: ids[1] }])
-    const removed = deleteProjectNodes(project.id, [ids[0]])
+    const gateway = createDiskGateway(project.id)
+    const { ids } = await addProjectNodes(gateway, [{ kind: 'image' }, { kind: 'video' }])
+    await connectProjectNodes(gateway, [{ source: ids[0], target: ids[1] }])
+    const removed = await deleteProjectNodes(gateway, [ids[0]])
     expect(removed.deleted).toEqual([ids[0]])
-    const canvas = readProjectCanvas(project.id)
+    const canvas = await readProjectCanvas(createDiskGateway(project.id))
     expect(canvas.nodes).toHaveLength(1)
     expect(canvas.edges).toHaveLength(0)
   })
@@ -99,6 +102,7 @@ describe('capabilityCore/core (B 模式：直写 project.json)', () => {
 
     const out = await generateOnProject(
       { projectId: project.id, intent: 'image', prompt: '一只赛博朋克猫', vendor: 'apimart', modelKey: 'seedream-4', references: ['https://cdn/ref.png'] },
+      createDiskGateway(project.id),
       fakeRunTask,
     )
 
@@ -115,7 +119,7 @@ describe('capabilityCore/core (B 模式：直写 project.json)', () => {
     expect(req.extras.referenceImages).toEqual(['https://cdn/ref.png'])
 
     // 结果落回节点：重读画布该节点 hasResult。
-    const canvas = readProjectCanvas(project.id)
+    const canvas = await readProjectCanvas(createDiskGateway(project.id))
     expect(canvas.nodes.find((node) => node.id === out.nodeId)?.hasResult).toBe(true)
   })
 
@@ -124,6 +128,7 @@ describe('capabilityCore/core (B 模式：直写 project.json)', () => {
     let kind = ''
     await generateOnProject(
       { projectId: project.id, intent: 'video', prompt: '镜头推进', vendor: 'apimart', modelKey: 'seedance', references: ['https://cdn/first.png'] },
+      createDiskGateway(project.id),
       async (payload) => {
         kind = (payload.request as { kind: string }).kind
         return { id: 't', status: 'succeeded', assets: [] }
@@ -132,7 +137,7 @@ describe('capabilityCore/core (B 模式：直写 project.json)', () => {
     expect(kind).toBe('image_to_video')
   })
 
-  it('未知项目抛清晰错误', () => {
-    expect(() => readProjectCanvas('ghost-id')).toThrow(/项目不存在/)
+  it('未知项目抛清晰错误', async () => {
+    await expect(readProjectCanvas(createDiskGateway('ghost-id'))).rejects.toThrow(/项目不存在/)
   })
 })

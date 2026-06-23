@@ -48,7 +48,7 @@ export function TextClipStyleControls({ timeline, selectedTextClipId }: Props): 
       <div className={cn('workbench-preview-player__control-separator', 'w-px h-5 bg-[var(--workbench-border-soft)]')} aria-hidden="true" />
       <div className={cn('workbench-preview-player__text-style', 'flex-none inline-flex items-center gap-1.5')} aria-label="文字样式">
         <span className="text-micro text-[var(--workbench-muted)] font-bold">字号</span>
-        <div className="inline-flex items-center gap-[3px]">
+        <div className="inline-flex items-center gap-1">
           <WorkbenchIconButton className={cn(CONTROL_ICON_BUTTON_CLASS)} label="减小字号" icon={<IconMinus size={14} />} onClick={() => applyTextScale(selectedTextScale - 0.1)} />
           <input
             className={cn('w-[40px] h-6 text-center text-micro font-bold tabular-nums', 'rounded-[var(--nomi-radius-sm)] border border-[var(--workbench-border)] bg-[var(--nomi-paper)] text-[var(--workbench-ink)] outline-none focus:border-[var(--nomi-accent)]')}

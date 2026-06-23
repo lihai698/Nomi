@@ -13,6 +13,15 @@ export type SpendConfirmRequest = {
   confirmLabel?: string
   /** 轻确认（用户直发）：允许「本次会话不再提示」。agent 受理不传 = 每次必确认。 */
   light?: boolean
+  /** 来源：'agent' = 外部 AI 助手（MCP）驱动，换机器人图标 + 副标。缺省按用户直发（金币图标）。 */
+  source?: 'user' | 'agent'
+  /** 明细行（节点 / 模型 / 预估），让用户一眼看懂谁要花钱、花在哪。 */
+  details?: Array<{ label: string; value: string }>
+  /**
+   * 倒计时（毫秒）：设了即显进度条 + 「N 秒后自动忽略」，到点自动按「未确认」返回（不死等）。
+   * 给 MCP/agent 驱动的确认用——外部调用方那头在等，超时必须给个干净返回。
+   */
+  countdownMs?: number
 }
 
 type Pending = SpendConfirmRequest & { resolve: (ok: boolean) => void }

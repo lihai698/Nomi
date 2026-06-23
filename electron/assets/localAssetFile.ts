@@ -86,17 +86,21 @@ export async function postJsonForAssetUpload(url: string, headers: Record<string
   return json;
 }
 
-/** R1 上传通道(multipart/form-data):apimart 等使用 file 字段二进制上传的供应商。 */
+/** R1 上传通道(multipart/form-data):file 字段二进制 + 可选文本字段(如 KIE stream 的 uploadPath/fileName)。
+ *  fileField 默认 "file";litterbox 等匿名托管用 "fileToUpload"。 */
 export async function postMultipartForAssetUpload(
   url: string,
   headers: Record<string, string>,
   file: Buffer,
   fileName: string,
   contentType: string,
+  extraFields?: Record<string, string>,
+  fileField = "file",
 ): Promise<unknown> {
   const form = new FormData();
   const arrayBuffer = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
-  form.append("file", new Blob([arrayBuffer], { type: contentType }), fileName);
+  form.append(fileField, new Blob([arrayBuffer], { type: contentType }), fileName);
+  for (const [key, value] of Object.entries(extraFields ?? {})) form.append(key, value);
   // 不手动设 Content-Type，fetch 会自动加 boundary。
   const { "Content-Type": _drop, ...restHeaders } = headers;
   const response = await fetch(url, { method: "POST", headers: restHeaders, body: form });

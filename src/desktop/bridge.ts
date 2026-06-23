@@ -69,8 +69,8 @@ export type DesktopExportTempInputWriteResult = {
 
 export type { ExportJobEvent, ExportJobSnapshot }
 
-/** 应用信息（功能需求1 查看版本号）。 */
-export type DesktopAppInfo = { version: string; platform: string; arch: string }
+/** 应用信息（功能需求1 查看版本号）。canAutoInstall：未签名 mac 无法就地装，走手动下载兜底（真相源在主进程）。 */
+export type DesktopAppInfo = { version: string; platform: string; arch: string; canAutoInstall: boolean }
 
 /** 主进程更新状态广播（功能需求2/3）。renderer 状态机纯 derive 自此事件。 */
 export type DesktopUpdateEvent =
@@ -139,6 +139,17 @@ export type DesktopBridge = {
       forceRerun?: boolean
     }) => Promise<{ url: string }>
   }
+  scene3d: {
+    /** N 帧 PNG dataURL（沿相机轨迹采样）→ ffmpeg 拼 H.264 mp4 → 项目素材。
+     *  AI 运镜工具的「轨迹→视频文件」桥，见 electron/video/framesToVideo.ts。 */
+    framesToVideo: (payload: {
+      projectId: string
+      ownerNodeId?: string | null
+      fileName?: string
+      fps: number
+      frames: string[]
+    }) => Promise<{ url: string; assetId?: string }>
+  }
   exports: {
     startJob: (payload: DesktopExportJobStartPayload) => Promise<DesktopExportJobStartResult>
     writeTempInput: (payload: DesktopExportTempInputWritePayload) => Promise<DesktopExportTempInputWriteResult>
@@ -188,6 +199,11 @@ export type DesktopBridge = {
   promptLibrary?: {
     list: () => Promise<{ ok: boolean; prompts: unknown[]; error?: string }>
     textBrain: () => Promise<{ ok: boolean; brain: { vendor: string; modelKey: string } | null }>
+    /** 我的库(用户级·跨项目):手写攒的提示词 CRUD,返回全量供渲染层本地过滤。 */
+    userList: () => Promise<{ ok: boolean; prompts: unknown[]; error?: string }>
+    userAdd: (input: { title?: string; prompt: string; promptType: 'image' | 'video' }) => Promise<{ ok: boolean; prompts: unknown[]; error?: string }>
+    userUpdate: (id: string, patch: { title?: string; prompt?: string; promptType?: 'image' | 'video' }) => Promise<{ ok: boolean; prompts: unknown[]; error?: string }>
+    userDelete: (id: string) => Promise<{ ok: boolean; prompts: unknown[]; error?: string }>
   }
   /** S4-2b 技术自检结果广播(主进程异步旁路 → 节点 ⚠ 投影)。 */
   review?: {
@@ -250,6 +266,8 @@ export type DesktopBridge = {
     check: () => Promise<{ ok: boolean; reason?: string }>
     download: () => Promise<{ ok: boolean }>
     install: () => Promise<{ ok: boolean }>
+    /** 手动更新兜底：开浏览器到 GitHub 最新 release（未签名 mac 无法就地装时用）。 */
+    openRelease: () => Promise<{ ok: boolean }>
     onEvent: (callback: (event: DesktopUpdateEvent) => void) => () => void
   }
   modelCatalog: {
@@ -278,19 +296,19 @@ export type DesktopBridge = {
   /** 能力核：上报当前打开项目，供外部调用的 A/B 守卫（可选——老 preload 无此口）。 */
   capability?: {
     setActiveProject: (projectId: string) => void
-    /** 「接入 AI 编程助手」卡：读接入状态 + 配置片段。 */
+    /** 「接入 AI 编程助手」卡：读接入状态 + 各客户端配置片段。 */
     mcpInfo: () => {
       tokenReady: boolean
       rpcRunning: boolean
-      installed: boolean
-      configPath: string
-      snippet: string
       server: { command: string; args: string[] }
+      clients: Record<'claude' | 'codex' | 'cursor', { installed: boolean; configPath: string; snippet: string }>
     }
-    /** 一键写入 ~/.claude.json 的 mcpServers.nomi（合并 + 备份）。 */
-    installMcp: () => { ok: boolean; configPath: string; backupPath: string | null }
-    /** 撤销接入：删 mcpServers.nomi。 */
-    uninstallMcp: () => { ok: boolean }
+    /** 一键写入指定客户端配置的 nomi 条目（合并 + 备份）。默认 Claude Code。 */
+    installMcp: (client?: string) => { ok: boolean; client: string; configPath: string; backupPath: string | null }
+    /** 撤销接入指定客户端：删 nomi 条目。默认 Claude Code。 */
+    uninstallMcp: (client?: string) => { ok: boolean; client: string }
+    /** A 模式实时桥：注册处理器，接主进程转发来的外部 MCP 画布读/写/付费确认。返回反注册函数。 */
+    onApply?: (handler: (op: string, payload: unknown) => unknown | Promise<unknown>) => () => void
   }
 }
 

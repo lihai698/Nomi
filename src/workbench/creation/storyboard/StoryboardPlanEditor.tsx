@@ -1,7 +1,6 @@
 import React from 'react'
 import { IconAlertTriangle, IconCheck, IconMovie, IconLockOpen, IconPlus } from '@tabler/icons-react'
-import { cn } from '../../../utils/cn'
-import { alertDialog, confirmDialog } from '../../../design'
+import { alertDialog, confirmDialog, WorkbenchButton } from '../../../design'
 import { useWorkbenchStore } from '../../workbenchStore'
 import { applyCanvasToolCall } from '../../generationCanvas/agent/applyCanvasToolCall'
 import { resolveStoryboardImageDefault, resolveStoryboardVideoDefault } from '../../generationCanvas/agent/availableModels'
@@ -124,20 +123,20 @@ export default function StoryboardPlanEditor(): JSX.Element | null {
           <span className="shrink-0 text-micro text-nomi-ink-40 bg-nomi-ink-05 px-2 py-0.5 rounded-full">{plan.shots.length} 镜</span>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
+          <WorkbenchButton
+            variant="default"
+            size="sm"
             onClick={() => setStoryboardEditorOpen(false)}
-            className="h-7 px-2.5 rounded-full border border-nomi-line bg-nomi-paper text-caption text-nomi-ink-60 hover:text-nomi-ink-80 hover:border-nomi-ink-20"
           >
             收起
-          </button>
-          <button
-            type="button"
+          </WorkbenchButton>
+          <WorkbenchButton
+            variant="default"
+            size="sm"
             onClick={onDiscard}
-            className="h-7 px-2.5 rounded-full border border-nomi-line bg-nomi-paper text-caption text-nomi-ink-60 hover:text-nomi-ink-80 hover:border-nomi-ink-20"
           >
             丢弃方案
-          </button>
+          </WorkbenchButton>
         </div>
       </header>
 
@@ -237,20 +236,14 @@ export default function StoryboardPlanEditor(): JSX.Element | null {
             全部就绪 · {plan.anchors.length} 锚 · {plan.shots.length} 镜
           </span>
         )}
-        <button
-          type="button"
+        <WorkbenchButton
+          variant="primary"
           onClick={onConfirm}
           disabled={issues.length > 0 || landing}
-          className={cn(
-            'shrink-0 h-8 px-4 rounded-full text-body-sm font-medium inline-flex items-center gap-[5px]',
-            issues.length > 0 || landing
-              ? 'bg-nomi-ink-40 text-nomi-paper cursor-not-allowed'
-              : 'bg-nomi-ink text-nomi-paper hover:bg-nomi-accent',
-          )}
         >
           <IconCheck size={15} stroke={1.8} />
           {landing ? '落画布中…' : '确认落画布'}
-        </button>
+        </WorkbenchButton>
       </footer>
     </section>
   )

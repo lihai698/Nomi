@@ -10,19 +10,11 @@ import {
   IconX,
 } from '@tabler/icons-react'
 import { cn } from '../../../../../utils/cn'
-import { UNGROUPED_TRAJECTORY_GROUP_ID } from '../scene3dConstants'
-import type {
-  Scene3DState,
-  Scene3DTrajectory,
-  Scene3DTrajectoryBinding,
-  Scene3DTrajectoryGroup,
-  Scene3DTrajectoryPoint,
-} from '../scene3dTypes'
+import type { Scene3DTrajectory, Scene3DTrajectoryBinding, Scene3DTrajectoryGroup, Scene3DTrajectoryPoint } from '../scene3dTypes'
 import { trajectoryPointTimeRatio } from './trajectoryUtils'
 import { useScene3DTrajectoryRuntimeStore, setScene3DPlayheadSeconds } from './trajectoryRuntimeStore'
 
 type TrajectoryTimelineProps = {
-  state: Pick<Scene3DState, 'trajectories' | 'trajectoryBindings' | 'trajectoryGroups' | 'sceneTimeline'>
   visible: boolean
   isPlaying: boolean
   readOnly: boolean
@@ -57,6 +49,7 @@ type TimelineRow =
     depth: 0 | 1
   }
 
+export const UNGROUPED_TRAJECTORY_GROUP_ID = '__ungrouped_trajectories__'
 const MIN_BINDING_DURATION = 0.1
 const MIN_POINT_TIME_GAP = 0.01
 
@@ -228,7 +221,7 @@ function GroupNameEditor({
   return (
     <input
       autoFocus
-      className="h-6 min-w-0 rounded-[6px] border border-[var(--nomi-line)] bg-[var(--nomi-paper)] px-1.5 text-[11px] text-[var(--nomi-ink)] outline-none"
+      className="h-6 min-w-0 rounded-nomi-sm border border-[var(--nomi-line)] bg-[var(--nomi-paper)] px-1.5 text-micro text-[var(--nomi-ink)] outline-none"
       defaultValue={group.name}
       onBlur={(event) => commit(event.currentTarget.value)}
       onKeyDown={(event) => {
@@ -243,7 +236,6 @@ function GroupNameEditor({
 }
 
 export function TrajectoryTimeline({
-  state,
   visible,
   isPlaying,
   readOnly,
@@ -259,10 +251,10 @@ export function TrajectoryTimeline({
   onPatchTrajectoryPoint,
 }: TrajectoryTimelineProps): JSX.Element | null {
   const laneRef = React.useRef<HTMLDivElement>(null)
-  const trajectories = state.trajectories
-  const trajectoryBindings = state.trajectoryBindings
-  const trajectoryGroups = state.trajectoryGroups
-  const totalDuration = Math.max(0.001, state.sceneTimeline.totalDuration)
+  const trajectories = useScene3DTrajectoryRuntimeStore((state) => state.trajectories)
+  const trajectoryBindings = useScene3DTrajectoryRuntimeStore((state) => state.trajectoryBindings)
+  const trajectoryGroups = useScene3DTrajectoryRuntimeStore((state) => state.trajectoryGroups)
+  const totalDuration = useScene3DTrajectoryRuntimeStore((state) => Math.max(0.001, state.sceneTimeline.totalDuration))
   const [collapsedGroupIds, setCollapsedGroupIds] = React.useState<Set<string>>(() => new Set())
   const [renamingGroupId, setRenamingGroupId] = React.useState<string | null>(null)
   const rows = React.useMemo(() => buildTimelineRows({
@@ -285,13 +277,13 @@ export function TrajectoryTimeline({
 
   return (
     <div
-      className="pointer-events-auto absolute inset-x-4 bottom-4 z-[5] max-w-none rounded-[8px] border border-[var(--nomi-line-soft)] bg-[var(--nomi-paper)] p-3 text-[var(--nomi-ink)] shadow-[var(--nomi-shadow-md)]"
+      className="pointer-events-auto absolute inset-x-4 bottom-4 z-[5] max-w-none rounded-nomi-sm border border-[var(--nomi-line-soft)] bg-[var(--nomi-paper)] p-3 text-[var(--nomi-ink)] shadow-[var(--nomi-shadow-md)]"
       onPointerDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
     >
       <div className="mb-2 flex items-center gap-2">
         <button
-          className="grid size-8 place-items-center rounded-[7px] bg-[var(--nomi-ink)] text-[var(--nomi-paper)] hover:opacity-90"
+          className="grid size-8 place-items-center rounded-nomi-sm bg-[var(--nomi-ink)] text-[var(--nomi-paper)] hover:opacity-90"
           type="button"
           title={isPlaying ? '暂停' : '播放'}
           onClick={() => onPlayChange(!isPlaying)}
@@ -299,7 +291,7 @@ export function TrajectoryTimeline({
           {isPlaying ? <IconPlayerPause size={16} /> : <IconPlayerPlay size={16} />}
         </button>
         <button
-          className="grid size-8 place-items-center rounded-[7px] bg-[var(--nomi-ink-05)] text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-10)] hover:text-[var(--nomi-ink)]"
+          className="grid size-8 place-items-center rounded-nomi-sm bg-[var(--nomi-ink-05)] text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-10)] hover:text-[var(--nomi-ink)]"
           type="button"
           title="归零"
           onClick={() => {
@@ -309,10 +301,10 @@ export function TrajectoryTimeline({
         >
           <IconPlayerSkipBack size={16} />
         </button>
-        <div className="min-w-0 flex-1 text-[12px] font-medium">轨迹时间轴</div>
-        <div className="text-[11px] text-[var(--nomi-ink-50)]">{formatSeconds(totalDuration)}</div>
+        <div className="min-w-0 flex-1 text-caption font-medium">轨迹时间轴</div>
+        <div className="text-micro text-[var(--nomi-ink-40)]">{formatSeconds(totalDuration)}</div>
         <button
-          className="grid size-8 place-items-center rounded-[7px] bg-[var(--nomi-ink-05)] text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-10)] hover:text-[var(--nomi-ink)]"
+          className="grid size-8 place-items-center rounded-nomi-sm bg-[var(--nomi-ink-05)] text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-10)] hover:text-[var(--nomi-ink)]"
           type="button"
           title="隐藏轨迹时间轴"
           onClick={onClose}
@@ -320,15 +312,15 @@ export function TrajectoryTimeline({
           <IconX size={15} />
         </button>
       </div>
-      <div className="grid max-h-[34vh] min-h-[132px] grid-cols-[190px_minmax(0,1fr)] overflow-hidden rounded-[7px] border border-[var(--nomi-line-soft)] bg-[var(--nomi-ink-05)]">
+      <div className="grid max-h-[34vh] min-h-[132px] grid-cols-[190px_minmax(0,1fr)] overflow-hidden rounded-nomi-sm border border-[var(--nomi-line-soft)] bg-[var(--nomi-ink-05)]">
         <div className="min-w-0 border-r border-[var(--nomi-line-soft)] bg-[var(--nomi-paper)] p-2">
           <div className="flex h-6 items-center justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-1.5 text-[11px] font-medium text-[var(--nomi-ink)]">
+            <div className="flex min-w-0 items-center gap-1.5 text-micro font-medium text-[var(--nomi-ink)]">
               <IconFolder size={14} stroke={1.9} />
               <span className="min-w-0 truncate">轨道组</span>
             </div>
             <button
-              className="grid size-6 place-items-center rounded-[6px] text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)] disabled:opacity-45"
+              className="grid size-6 place-items-center rounded-nomi-sm text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)] disabled:opacity-45"
               disabled={readOnly}
               type="button"
               title="新增空白组"
@@ -339,7 +331,7 @@ export function TrajectoryTimeline({
           </div>
           <div className="mt-2 grid max-h-[calc(34vh-54px)] gap-1 overflow-auto pr-1">
             {rows.length === 0 ? (
-              <div className="grid h-12 place-items-center rounded-[6px] border border-dashed border-[var(--nomi-line-soft)] text-[11px] text-[var(--nomi-ink-45)]">
+              <div className="grid h-12 place-items-center rounded-nomi-sm border border-dashed border-[var(--nomi-line-soft)] text-micro text-[var(--nomi-ink-40)]">
                 暂无轨迹
               </div>
             ) : rows.map((row) => {
@@ -348,15 +340,15 @@ export function TrajectoryTimeline({
                   <button
                     key={row.id}
                     className={cn(
-                      'grid h-7 grid-cols-[16px_minmax(0,1fr)_40px] items-center gap-1 rounded-[6px] pr-1 text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-05)]',
+                      'grid h-7 grid-cols-[16px_minmax(0,1fr)_40px] items-center gap-1 rounded-nomi-sm pr-1 text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-05)]',
                       row.depth === 1 && 'pl-7',
                     )}
                     type="button"
                     onClick={() => onSelectTrajectory(row.trajectory.id)}
                   >
                     <span className="size-2.5 rounded-full" style={{ backgroundColor: row.trajectory.color }} />
-                    <span className="min-w-0 truncate text-left text-[11px]">{row.trajectory.name}</span>
-                    <span className="justify-self-end text-[10px] text-[var(--nomi-ink-45)]">{row.binding ? '已绑定' : '未绑定'}</span>
+                    <span className="min-w-0 truncate text-micro">{row.trajectory.name}</span>
+                    <span className="justify-self-end text-micro text-[var(--nomi-ink-40)]">{row.binding ? '已绑定' : '未绑定'}</span>
                   </button>
                 )
               }
@@ -366,14 +358,14 @@ export function TrajectoryTimeline({
                 <div
                   key={row.id}
                   className={cn(
-                    'grid h-7 grid-cols-[20px_16px_minmax(0,1fr)_28px] items-center gap-1 rounded-[6px] px-1 text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-05)]',
+                    'grid h-7 grid-cols-[20px_16px_minmax(0,1fr)_28px] items-center gap-1 rounded-nomi-sm px-1 text-[var(--nomi-ink-60)] hover:bg-[var(--nomi-ink-05)]',
                     selected && 'bg-[var(--nomi-ink)] text-[var(--nomi-paper)] hover:bg-[var(--nomi-ink)] hover:text-[var(--nomi-paper)]',
                   )}
                   onClick={() => onSelectGroup(row.selectionGroupId)}
                 >
                   {row.collapsible ? (
                     <button
-                      className="grid size-5 place-items-center rounded-[5px] hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)]"
+                      className="grid size-5 place-items-center rounded-nomi-sm hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)]"
                       type="button"
                       title={collapsedGroupIds.has(row.id) ? '展开' : '收起'}
                       onClick={(event) => {
@@ -387,7 +379,7 @@ export function TrajectoryTimeline({
                   <IconFolder
                     size={13}
                     stroke={1.9}
-                    className={selected ? 'text-[var(--nomi-paper)]' : 'text-[var(--nomi-ink-45)]'}
+                    className={selected ? 'text-[var(--nomi-paper)]' : 'text-[var(--nomi-ink-40)]'}
                   />
                   {row.group && renamingGroupId === row.group.id ? (
                     <GroupNameEditor
@@ -397,7 +389,7 @@ export function TrajectoryTimeline({
                     />
                   ) : (
                     <button
-                      className="min-w-0 truncate bg-transparent p-0 text-left text-[11px] font-medium text-inherit"
+                      className="min-w-0 truncate bg-transparent p-0 text-left text-micro font-medium text-inherit"
                       type="button"
                       title={row.virtual ? undefined : '双击重命名'}
                       onClick={(event) => {
@@ -412,8 +404,8 @@ export function TrajectoryTimeline({
                     </button>
                   )}
                   <span className={cn(
-                    'justify-self-end text-[10px]',
-                    selected ? 'text-[var(--nomi-paper)] opacity-75' : 'text-[var(--nomi-ink-45)]',
+                    'justify-self-end text-micro',
+                    selected ? 'text-[var(--nomi-paper)] opacity-75' : 'text-[var(--nomi-ink-40)]',
                   )}
                   >
                     {row.trajectoryCount}
@@ -424,7 +416,7 @@ export function TrajectoryTimeline({
           </div>
         </div>
         <div className="min-w-0 p-2">
-          <div className="grid grid-cols-5 text-[10px] text-[var(--nomi-ink-45)]">
+          <div className="grid grid-cols-5 text-micro text-[var(--nomi-ink-40)]">
             {[0, 0.25, 0.5, 0.75, 1].map((ratio) => (
               <span key={ratio} className={cn(ratio === 0.5 && 'text-center', ratio > 0.5 && 'text-right')}>
                 {formatSeconds(ratio * totalDuration)}
@@ -436,11 +428,11 @@ export function TrajectoryTimeline({
             className="relative mt-2 grid max-h-[calc(34vh-54px)] min-w-0 gap-1 overflow-auto pr-1"
           >
             {rows.length === 0 ? (
-              <div className="grid h-12 place-items-center text-[11px] text-[var(--nomi-ink-45)]">暂无绑定区间</div>
+              <div className="grid h-12 place-items-center text-micro text-[var(--nomi-ink-40)]">暂无绑定区间</div>
             ) : rows.map((row) => row.type === 'group' ? (
-              <div key={row.id} className="h-7 rounded-[6px] bg-[var(--nomi-paper)]/70" />
+              <div key={row.id} className="h-7 rounded-nomi-sm bg-[var(--nomi-paper)]/70" />
             ) : (
-              <div key={row.id} className="relative h-7 rounded-[6px] bg-[var(--nomi-paper)]">
+              <div key={row.id} className="relative h-7 rounded-nomi-sm bg-[var(--nomi-paper)]">
                 {row.binding ? (
                   <TimelineBindingBar
                     binding={row.binding}
@@ -452,7 +444,7 @@ export function TrajectoryTimeline({
                     onPatchTrajectoryPoint={onPatchTrajectoryPoint}
                   />
                 ) : (
-                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[10px] text-[var(--nomi-ink-35)]">未绑定</span>
+                  <span className="absolute left-2 top-1/2 -translate-y-1/2 text-micro text-[var(--nomi-ink-30)]">未绑定</span>
                 )}
               </div>
             ))}
@@ -599,7 +591,7 @@ function TimelineBindingBar({
     <div
       ref={barRef}
       className={cn(
-        'absolute inset-y-0 rounded-[6px] border border-white/70 shadow-sm',
+        'absolute inset-y-0 rounded-nomi-sm border border-nomi-paper/70 shadow-nomi-sm',
         readOnly ? 'cursor-default' : 'cursor-grab active:cursor-grabbing',
       )}
       style={{
@@ -613,18 +605,18 @@ function TimelineBindingBar({
       {!readOnly ? (
         <>
           <span
-            className="absolute inset-y-0 left-0 z-[1] w-2 cursor-ew-resize rounded-l-[6px] bg-white/25 hover:bg-white/45"
+            className="absolute inset-y-0 left-0 z-[1] w-2 cursor-ew-resize rounded-l-nomi-sm bg-nomi-ink-20 hover:bg-nomi-ink-30"
             title="拖动开始时间"
             onPointerDown={(event) => startDrag(event, 'start')}
           />
           <span
-            className="absolute inset-y-0 right-0 z-[1] w-2 cursor-ew-resize rounded-r-[6px] bg-white/25 hover:bg-white/45"
+            className="absolute inset-y-0 right-0 z-[1] w-2 cursor-ew-resize rounded-r-nomi-sm bg-nomi-ink-20 hover:bg-nomi-ink-30"
             title="拖动结束时间"
             onPointerDown={(event) => startDrag(event, 'end')}
           />
         </>
       ) : null}
-      <span className="block truncate px-1.5 text-[10px] leading-7 text-white drop-shadow-sm">{objectSummary}</span>
+      <span className="block truncate px-1.5 text-micro leading-7 text-nomi-paper">{objectSummary}</span>
       {pointCount > 1 ? trajectory.points.map((point, pointIndex) => {
         const ratio = trajectoryPointTimeRatio(trajectory, pointIndex)
         const locked = pointIndex === 0 || (!trajectory.closed && pointIndex === pointCount - 1)
@@ -632,7 +624,7 @@ function TimelineBindingBar({
           <button
             key={point.id}
             className={cn(
-              'absolute top-1/2 z-[2] size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white bg-[var(--nomi-paper)] shadow-sm',
+              'absolute top-1/2 z-[2] size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border border-nomi-paper bg-nomi-paper shadow-nomi-sm',
               locked || readOnly ? 'cursor-default opacity-90' : 'cursor-ew-resize hover:scale-110',
             )}
             style={{ left: `${ratio * 100}%` }}

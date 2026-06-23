@@ -69,12 +69,41 @@ describe('capabilityCore/mcpConfig', () => {
   })
 
   it('readMcpInfo 反映 installed 状态 + 给出可复制片段', () => {
-    expect(readMcpInfo(0).installed).toBe(false)
+    expect(readMcpInfo(0).clients.claude.installed).toBe(false)
     installMcp()
     const info = readMcpInfo(17371)
-    expect(info.installed).toBe(true)
+    expect(info.clients.claude.installed).toBe(true)
     expect(info.rpcRunning).toBe(true)
-    expect(info.snippet).toContain('"nomi"')
-    expect(info.snippet).toContain('nomi-mcp.mjs')
+    expect(info.clients.claude.snippet).toContain('"nomi"')
+    expect(info.clients.claude.snippet).toContain('nomi-mcp.mjs')
+  })
+
+  it('codex：install 写 TOML [mcp_servers.nomi]，保留已有表；uninstall 只删本块', () => {
+    const codexPath = path.join(homeDir, '.codex', 'config.toml')
+    fs.mkdirSync(path.dirname(codexPath), { recursive: true })
+    fs.writeFileSync(codexPath, '[mcp_servers.other]\ncommand = "x"\n')
+    installMcp('codex')
+    let text = fs.readFileSync(codexPath, 'utf8')
+    expect(text).toContain('[mcp_servers.nomi]')
+    expect(text).toContain('command = "node"')
+    expect(text).toContain('nomi-mcp.mjs')
+    expect(text).toContain('[mcp_servers.other]') // 别人的块没被动
+    expect(readMcpInfo(0).clients.codex.installed).toBe(true)
+    uninstallMcp('codex')
+    text = fs.readFileSync(codexPath, 'utf8')
+    expect(text).not.toContain('[mcp_servers.nomi]')
+    expect(text).toContain('[mcp_servers.other]')
+    expect(readMcpInfo(0).clients.codex.installed).toBe(false)
+  })
+
+  it('cursor：install 写 ~/.cursor/mcp.json 的 mcpServers.nomi（目录/文件自动建），互不影响 claude', () => {
+    const cursorPath = path.join(homeDir, '.cursor', 'mcp.json')
+    expect(fs.existsSync(cursorPath)).toBe(false)
+    installMcp('cursor')
+    const after = JSON.parse(fs.readFileSync(cursorPath, 'utf8'))
+    expect(after.mcpServers.nomi.command).toBe('node')
+    expect(after.mcpServers.nomi.args[0]).toContain('nomi-mcp.mjs')
+    expect(readMcpInfo(0).clients.cursor.installed).toBe(true)
+    expect(readMcpInfo(0).clients.claude.installed).toBe(false) // 各客户端独立
   })
 })

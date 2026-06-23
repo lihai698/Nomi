@@ -111,7 +111,7 @@ export default function NomiAppBar({ workspaceMode, onWorkspaceModeChange, proje
                   'inline-flex items-center h-full px-2.5',
                   'border-none bg-transparent font-inherit text-body-sm',
                   'cursor-pointer whitespace-nowrap',
-                  'text-[var(--nomi-ink-50)]',
+                  'text-[var(--nomi-ink-40)]',
                   'transition-[background,color] duration-[var(--nomi-transition-fast)]',
                   'hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)]',
                   'max-[700px]:hidden',

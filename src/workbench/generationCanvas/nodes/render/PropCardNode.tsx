@@ -55,7 +55,7 @@ function PropCardNodeImpl({ node }: Props): JSX.Element {
           </div>
           {hasOwner ? (
             <span className="inline-flex items-center gap-1 text-caption font-medium text-nomi-accent">
-              <IconLink size={12} stroke={1.8} aria-hidden />
+              <IconLink size={13} stroke={1.8} aria-hidden />
               <span className="truncate" title={`属于 ${meta.ownedBy}`}>
                 {meta.ownedBy}的
               </span>

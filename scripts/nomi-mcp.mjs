@@ -8,9 +8,57 @@
 // 在 Claude Code 里配置（~/.claude.json 或项目 .mcp.json）：
 //   { "mcpServers": { "nomi": { "command": "node", "args": ["<repo>/scripts/nomi-mcp.mjs"] } } }
 import readline from 'node:readline'
-import { invoke } from './lib/nomiClient.mjs'
+import { invoke, readLiveInstance } from './lib/nomiClient.mjs'
 
 const PROTOCOL_VERSION = '2025-11-25'
+
+// 客户端能力（initialize 时捕获）。elicitation = 客户端能代我们向真人弹确认对话框（MCP 规范 2025-06-18）。
+// 用于「Nomi 没开时，让用户在 Claude 这一侧确认付费生成」——模型自己无法应答 elicitation（只有真人/用户
+// 自配的 Hook 能答），故付费铁律「真人确认才授权」不破。
+let clientSupportsElicitation = false
+
+// 服务端→客户端请求（如 elicitation/create）：手搓 JSON-RPC 需自管 id 与 pending，等客户端回响应。
+let serverReqSeq = 0
+const pendingServerReqs = new Map()
+
+function sendServerRequest(method, params, timeoutMs = 300000) {
+  const id = `srv-${(serverReqSeq += 1)}`
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      pendingServerReqs.delete(id)
+      reject(new Error('客户端无响应（确认超时）'))
+    }, timeoutMs)
+    pendingServerReqs.set(id, { resolve, reject, timer })
+    send({ jsonrpc: '2.0', id, method, params })
+  })
+}
+
+/**
+ * 让客户端（Claude Code）向真人弹一个「确认花费」对话框（boolean）。
+ * 不支持 elicitation 的客户端返回 { supported:false }；支持则返回 { supported:true, confirmed:bool }。
+ * 规范禁止用 elicitation 索取密码/密钥——这里只问「确不确认花钱」，不碰敏感信息。
+ */
+async function elicitSpendConfirm(text) {
+  if (!clientSupportsElicitation) return { supported: false }
+  try {
+    const res = await sendServerRequest('elicitation/create', {
+      message: text,
+      requestedSchema: {
+        type: 'object',
+        properties: {
+          confirm: { type: 'boolean', title: '确认生成', description: '确认后将消耗模型额度生成；取消则不生成、不花费。' },
+        },
+        required: ['confirm'],
+      },
+    })
+    // 三态：accept(带 content) / decline / cancel。只在明确 accept 且未显式 confirm=false 时放行。
+    const confirmed = res?.action === 'accept' && res?.content?.confirm !== false
+    return { supported: true, confirmed }
+  } catch {
+    // 超时/异常 → 当作未确认（不死等、不偷偷花钱）。
+    return { supported: true, confirmed: false }
+  }
+}
 
 // 工具定义：name → { description, inputSchema(JSON Schema), method(能力核方法), build(args→params) }。
 const TOOLS = [
@@ -124,6 +172,16 @@ const TOOLS = [
 
 const TOOL_BY_NAME = new Map(TOOLS.map((tool) => [tool.name, tool]))
 
+const INTENT_LABEL = { image: '一张画面', video: '一段视频', audio: '一段音频', text: '一段文本' }
+
+/** 人话花费提示（给确认对话框看）：产物类型 + 模型 + 提示词截断。不显金额（守卫不依赖金额）。 */
+function describeSpend(args) {
+  const what = INTENT_LABEL[String(args?.intent || '')] || '一个素材'
+  const model = [args?.vendor, args?.modelKey].filter(Boolean).join(' · ') || '默认模型'
+  const prompt = typeof args?.prompt === 'string' && args.prompt.trim() ? `「${args.prompt.trim().slice(0, 50)}${args.prompt.length > 50 ? '…' : ''}」` : ''
+  return `即将用 ${model} 生成${what}${prompt ? ' ' + prompt : ''}，将消耗模型额度。`
+}
+
 function send(message) {
   process.stdout.write(JSON.stringify(message) + '\n')
 }
@@ -142,8 +200,14 @@ async function handle(message) {
   if (id === undefined || id === null) return
 
   if (method === 'initialize') {
+    // 记下客户端是否支持 elicitation（能代我们向真人弹确认对话框）。
+    clientSupportsElicitation = Boolean(params?.capabilities?.elicitation)
+    // 协议版本回显客户端请求的版本（兼容性根因 R5 实证）：我们只用 tools + elicitation(能力门控降级)，
+    // 这俩跨各修订都在，故回显客户端所讲版本最大化兼容。硬回我们偏好的版本会让只讲更老协议的客户端
+    // 按规范 SHOULD 断开 → 连基础工具都用不了。客户端没给版本才回退我们的默认。
+    const negotiatedVersion = typeof params?.protocolVersion === 'string' && params.protocolVersion ? params.protocolVersion : PROTOCOL_VERSION
     reply(id, {
-      protocolVersion: PROTOCOL_VERSION,
+      protocolVersion: negotiatedVersion,
       capabilities: { tools: {} },
       serverInfo: { name: 'nomi-capability-core', version: '0.1.0' },
       instructions: '用 nomi_* 工具在本机驱动 Nomi：列项目/模型、建项目、读画布、加节点/连线/改提示词、触发生成。生成会花用户额度。',
@@ -161,8 +225,30 @@ async function handle(message) {
       replyError(id, -32602, `未知工具: ${name}`)
       return
     }
+    const args = params?.arguments || {}
     try {
-      const result = await invoke(tool.method, tool.build(params?.arguments || {}))
+      // 付费生成 + Nomi 没开（B 模式，无应用内确认卡可弹）→ 在 Claude 这一侧弹 elicitation 让真人确认。
+      // 真人确认才以本次调用 env 授权 headless host 铸令牌（NOMI_LOOP_SPEND_OK）；enforcement 仍在主进程硬闸。
+      // app 开着（A 模式）则照常走——由应用内确认卡处理，不在此弹（用户人在 Nomi 边上）。
+      if (tool.name === 'nomi_generate' && !readLiveInstance()) {
+        const costHint = describeSpend(args)
+        const confirm = await elicitSpendConfirm(`Nomi 未打开。${costHint}\n确认现在生成吗？`)
+        if (!confirm.supported) {
+          reply(id, {
+            content: [{ type: 'text', text: '已暂停：Nomi 未打开，且当前客户端不支持弹确认。请打开 Nomi 后再触发生成（或在 Nomi 里确认）。节点/提示词若已通过其它工具写入则已保存。' }],
+            isError: true,
+          })
+          return
+        }
+        if (!confirm.confirmed) {
+          reply(id, { content: [{ type: 'text', text: '已取消：你未确认这次付费生成，未生成、未消耗额度。' }], isError: true })
+          return
+        }
+        const result = await invoke(tool.method, tool.build(args), { spawnEnv: { NOMI_LOOP_SPEND_OK: '1' } })
+        reply(id, { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] })
+        return
+      }
+      const result = await invoke(tool.method, tool.build(args))
       reply(id, { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] })
     } catch (error) {
       // 工具执行失败用 isError 返回（让模型看到错误而非协议级 error）。
@@ -186,6 +272,15 @@ rl.on('line', (line) => {
     message = JSON.parse(trimmed)
   } catch {
     return // 非 JSON 行忽略（不崩）
+  }
+  // 客户端对「服务端→客户端请求」（如 elicitation/create）的响应：按 id 路由到 pending，不当新请求处理。
+  if (message && message.method === undefined && message.id != null && pendingServerReqs.has(message.id)) {
+    const pending = pendingServerReqs.get(message.id)
+    pendingServerReqs.delete(message.id)
+    clearTimeout(pending.timer)
+    if (message.error) pending.reject(new Error(message.error.message || '客户端返回错误'))
+    else pending.resolve(message.result)
+    return
   }
   void handle(message).catch((error) => {
     if (message && message.id != null) replyError(message.id, -32603, error instanceof Error ? error.message : String(error))

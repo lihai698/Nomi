@@ -11,6 +11,7 @@ let mockedDocumentsRoot = ''
 let mockedUserDataRoot = ''
 let server: RpcServerHandle | null = null
 let token = ''
+let openProjectId = ''
 
 vi.mock('electron', () => ({
   app: {
@@ -38,10 +39,11 @@ beforeEach(async () => {
   mockedDocumentsRoot = makeTempDir('nomi-rpc-documents-')
   mockedUserDataRoot = makeTempDir('nomi-rpc-user-data-')
   delete process.env.NOMI_PROJECTS_DIR
+  openProjectId = ''
   token = ensureToken()
   server = await startRpcServer({
     runTask: async () => ({ id: 't', status: 'succeeded', assets: [{ type: 'image', url: 'nomi-local://x' }] }),
-    isProjectOpen: (id) => id === 'OPEN_PROJECT',
+    isProjectOpen: (id) => Boolean(openProjectId) && id === openProjectId,
   })
 })
 
@@ -88,10 +90,18 @@ describe('capabilityCore/rpcServer', () => {
     expect((gen.body.result as { status: string }).status).toBe('succeeded')
   })
 
-  it('A/B 守卫：改正在打开的项目 → 409 说人话', async () => {
-    const blocked = await rpc('canvas.addNodes', { projectId: 'OPEN_PROJECT', nodes: [{ kind: 'text' }] })
-    expect(blocked.status).toBe(409)
-    expect(blocked.body.error).toMatch(/正在 Nomi 中打开/)
+  it('A 模式无渲染层（测试环境）：改打开中的项目 → 降级磁盘网关，照常落盘（不再硬 409）', async () => {
+    // 新路由：app 开着 + 项目打开 → 本应走渲染层网关实时应用；测试环境无渲染层可达，
+    // 降级到磁盘网关直写盘（isRendererAvailable=false）。证明不再有「打开即拒绝」的死路。
+    const created = await rpc('project.create', { name: '打开中的项目' })
+    const projectId = (created.body.result as { id: string }).id
+    openProjectId = projectId
+    const added = await rpc('canvas.addNodes', { projectId, nodes: [{ kind: 'text', prompt: 'live' }] })
+    expect(added.status).toBe(200)
+    expect(added.body.ok).toBe(true)
+    expect((added.body.result as { ids: string[] }).ids).toHaveLength(1)
+    const read = await rpc('canvas.read', { projectId })
+    expect((read.body.result as { nodes: unknown[] }).nodes).toHaveLength(1)
   })
 
   it('未知方法 → 404', async () => {

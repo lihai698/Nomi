@@ -62,8 +62,3 @@ export function WorkbenchAiHeaderActions({
     </div>
   )
 }
-
-export function openWorkbenchModelIntegration(): void {
-  if (typeof window === 'undefined') return
-  window.dispatchEvent(new CustomEvent('nomi-open-model-catalog', { detail: { intent: 'model-integration' } }))
-}

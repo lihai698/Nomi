@@ -286,9 +286,9 @@ function PanoramaDialogToolbar({ onClose, onScreenshot }: PanoramaDialogToolbarP
   return (
     <div
       className={cn(
-        'absolute top-3 right-3 z-[2] flex items-center gap-1 p-[5px]',
-        'border border-border-subtle rounded-pill',
-        'bg-white/88 shadow-sm backdrop-blur-[12px] saturate-[1.2]',
+        'absolute top-3 right-3 z-[2] flex items-center gap-1 p-1.5',
+        'border border-nomi-line rounded-pill',
+        'bg-nomi-paper shadow-nomi-md backdrop-blur-[12px] saturate-[1.2]',
       )}
       onPointerDown={(event) => event.stopPropagation()}
     >
@@ -296,8 +296,8 @@ function PanoramaDialogToolbar({ onClose, onScreenshot }: PanoramaDialogToolbarP
         className={cn(
           'inline-grid w-6 h-6 place-items-center p-0',
           'border border-transparent rounded-full',
-          'bg-transparent text-text-tertiary cursor-pointer',
-          'hover:bg-surface-inline hover:text-text-primary',
+          'bg-transparent text-nomi-ink-60 cursor-pointer',
+          'hover:bg-nomi-ink-05 hover:text-nomi-ink',
           'disabled:opacity-45 disabled:cursor-wait',
         )}
         label="截图当前视口"
@@ -308,8 +308,8 @@ function PanoramaDialogToolbar({ onClose, onScreenshot }: PanoramaDialogToolbarP
         className={cn(
           'inline-grid w-6 h-6 place-items-center p-0',
           'border border-transparent rounded-full',
-          'bg-transparent text-text-tertiary cursor-pointer',
-          'hover:bg-surface-inline hover:text-text-primary',
+          'bg-transparent text-nomi-ink-60 cursor-pointer',
+          'hover:bg-nomi-ink-05 hover:text-nomi-ink',
           'disabled:opacity-45 disabled:cursor-wait',
         )}
         label="关闭预览"
@@ -365,7 +365,7 @@ export default function PanoramaViewer({ imageUrl, width, height, onEnterFullscr
   if (!imageUrl) {
     return (
       <div
-        className="flex items-center justify-center text-xs opacity-50"
+        className="flex items-center justify-center text-caption opacity-50"
         style={{ width, height }}
       >
         上传全景图或连接图片节点
@@ -376,7 +376,7 @@ export default function PanoramaViewer({ imageUrl, width, height, onEnterFullscr
   return (
     <>
       <div
-        className="group relative overflow-hidden rounded"
+        className="group relative overflow-hidden rounded-nomi"
         style={{ width, height }}
       >
         <ReactPannellum
@@ -402,13 +402,13 @@ export default function PanoramaViewer({ imageUrl, width, height, onEnterFullscr
             className={cn(
               'pointer-events-auto inline-flex items-center gap-1.5 rounded-full',
               'px-3 py-1.5 text-micro font-medium text-nomi-paper',
-              'bg-[rgba(15,18,22,0.64)] backdrop-blur-[6px]',
+              'bg-[color-mix(in_oklab,var(--nomi-ink)64%,transparent)] backdrop-blur-[6px]',
               'opacity-0 transition-opacity duration-150 group-hover:opacity-100',
-              'hover:bg-[rgba(15,18,22,0.8)] focus-visible:opacity-100',
+              'hover:bg-[color-mix(in_oklab,var(--nomi-ink)80%,transparent)] focus-visible:opacity-100',
             )}
             aria-label="进入全景预览"
           >
-            <IconMaximize size={14} stroke={1.8} />进入全景
+            <IconMaximize size={14} stroke={1.6} />进入全景
           </button>
         </div>
       </div>
@@ -417,7 +417,7 @@ export default function PanoramaViewer({ imageUrl, width, height, onEnterFullscr
         <div
           className={cn(
             'fixed inset-0 z-[9999] flex items-center justify-center p-8',
-            'bg-[rgba(15,18,22,0.72)] backdrop-blur-[10px]',
+            'bg-workbench-backdrop backdrop-blur-[10px]',
           )}
           onPointerDown={(event) => event.stopPropagation()}
           onClick={(event) => {
@@ -428,7 +428,7 @@ export default function PanoramaViewer({ imageUrl, width, height, onEnterFullscr
             className={cn(
               'relative w-[min(96vw,calc((100vh-64px)*16/9))] aspect-video',
               'max-h-[calc(100vh-64px)] overflow-hidden rounded-nomi-lg',
-              'bg-black shadow-[0_24px_72px_rgba(15,18,22,0.42)]',
+              'bg-nomi-ink shadow-nomi-lg',
             )}
             data-panorama-dialog-panel
             role="dialog"

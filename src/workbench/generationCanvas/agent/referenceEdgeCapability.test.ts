@@ -114,3 +114,25 @@ describe('partitionConnectableEdges — 批准时剔除连不上的边(批准≡
     expect(dropped).toHaveLength(0)
   })
 })
+
+import { findVideoRefMode } from './referenceEdgeCapability'
+import { getArchetypeById } from '../../../config/modelArchetypes'
+
+describe('findVideoRefMode — 档案有没有 video_ref 槽', () => {
+  it('Seedance 2.0 (omni 有 video_ref) → 返回 omni 模式 + referenceVideoUrls + video_urls', () => {
+    const arch = getArchetypeById('seedance-2-apimart')
+    expect(arch).toBeTruthy()
+    const found = findVideoRefMode(arch)
+    expect(found).toEqual({ modeId: 'omni', metaKey: 'referenceVideoUrls', inputKey: 'video_urls' })
+  })
+
+  it('纯文生图模型(imagen-4,无任何视频参考槽) → null', () => {
+    const arch = getArchetypeById('imagen-4')
+    expect(arch).toBeTruthy()
+    expect(findVideoRefMode(arch)).toBeNull()
+  })
+
+  it('null 档案 → null(降级 prompt 地板)', () => {
+    expect(findVideoRefMode(null)).toBeNull()
+  })
+})

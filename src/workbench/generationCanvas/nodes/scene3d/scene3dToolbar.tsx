@@ -180,7 +180,7 @@ export function SceneAddToolbar({
                 key={item.kind}
                 className={cn(
                   'inline-flex h-8 w-full items-center justify-start gap-2 rounded-nomi px-2',
-                  'border-0 bg-transparent text-left text-caption text-[var(--nomi-ink-70)] transition',
+                  'border-0 bg-transparent text-left text-caption text-[var(--nomi-ink-60)] transition',
                   'hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)]',
                 )}
                 type="button"
@@ -206,7 +206,7 @@ export function SceneAddToolbar({
           <button
             className={cn(
               'inline-flex h-8 w-full items-center justify-start gap-2 rounded-nomi px-2',
-              'border-0 bg-transparent text-left text-caption text-[var(--nomi-ink-70)] transition',
+              'border-0 bg-transparent text-left text-caption text-[var(--nomi-ink-60)] transition',
               'hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)]',
             )}
             type="button"
@@ -219,7 +219,7 @@ export function SceneAddToolbar({
           <button
             className={cn(
               'inline-flex h-8 w-full items-center justify-start gap-2 rounded-nomi px-2',
-              'border-0 bg-transparent text-left text-caption text-[var(--nomi-ink-70)] transition',
+              'border-0 bg-transparent text-left text-caption text-[var(--nomi-ink-60)] transition',
               'hover:bg-[var(--nomi-ink-05)] hover:text-[var(--nomi-ink)]',
               crowdPopoverOpen && 'bg-[var(--nomi-ink-05)] text-[var(--nomi-ink)]',
             )}

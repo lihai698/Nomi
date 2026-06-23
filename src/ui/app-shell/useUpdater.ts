@@ -23,9 +23,12 @@ export type Updater = {
   errorMessage: string
   /** 桌面端且主进程暴露了 update 桥才支持检查/更新（Web 预览态只显示版本号）。 */
   supported: boolean
+  /** 能否就地自动安装；未签名 mac 为 false → UI 走「前往下载」手动兜底（真相源在主进程 appInfo）。 */
+  canAutoInstall: boolean
   check: () => void
   download: () => void
   install: () => void
+  openRelease: () => void
   reset: () => void
 }
 
@@ -103,7 +106,14 @@ export function useUpdater(): Updater {
     void update?.install().catch(() => undefined)
   }, [update])
 
+  const openRelease = React.useCallback(() => {
+    void update?.openRelease().catch(() => undefined)
+  }, [update])
+
   const reset = React.useCallback(() => setState(INITIAL), [])
+
+  // 未签名 mac 无法就地装；appInfo 未到位时按桌面默认（true），到位后以主进程口径为准。
+  const canAutoInstall = appInfo?.canAutoInstall ?? true
 
   return {
     phase: state.phase,
@@ -113,9 +123,11 @@ export function useUpdater(): Updater {
     percent: state.percent,
     errorMessage: state.errorMessage,
     supported,
+    canAutoInstall,
     check,
     download,
     install,
+    openRelease,
     reset,
   }
 }

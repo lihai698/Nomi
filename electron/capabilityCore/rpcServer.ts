@@ -4,14 +4,16 @@
 // （Authorization: Bearer <token>，常数时间校验）。所有传输（CLI / MCP）都打它，路由到能力核。
 // 用 node:http，**不引新依赖**（P1 极简）。
 //
-// A/B 模式守卫（诚实、不静默损坏）：app 开着时，它内存 store 才是工程真相、会防抖回盘；此时对
-// **正在打开的项目**直写文件会被覆盖（数据丢失）。故注入 isProjectOpen()，命中即拒绝图变更并说人话
-// （A 模式实时桥接是后续切片）。headless host 里 isProjectOpen 恒 false → 全放行。
+// A/B 模式路由（所见即所得 + 不静默损坏）：app 开着且改的正是**正在打开的项目** → 走渲染层网关
+// （A 模式：实时应用进 store，画布即时刷新、需要确认时弹卡）；否则 → 磁盘网关（B 模式：直写盘）。
+// 注入 isProjectOpen()（renderer 经 IPC 上报）。headless host 里 isProjectOpen 恒 false → 全走磁盘网关。
 import http from 'node:http'
 import type { AddressInfo } from 'node:net'
 
 import type { FetchTaskResultFn, RunTaskFn } from './core'
-import { dispatch, MUTATION_METHODS, projectIdOf, RpcError } from './dispatcher'
+import { dispatch, RpcError } from './dispatcher'
+import { createDiskGateway, createRendererGateway, type ProjectGateway } from './gateway'
+import { isRendererAvailable } from './rendererBridge'
 import { verifyToken } from './security'
 
 export type RpcServerOptions = {
@@ -56,6 +58,12 @@ export type RpcServerHandle = {
 /** 启动 RPC server，监听 127.0.0.1 随机端口。返回端口与关闭句柄。 */
 export function startRpcServer(options: RpcServerOptions): Promise<RpcServerHandle> {
   const isProjectOpen = options.isProjectOpen || (() => false)
+  // 该项目正在窗口打开且渲染层可达 → 渲染层网关（实时）；否则磁盘网关（直写盘）。
+  // isProjectOpen 由 renderer 上报，为真即意味着窗口活着；isRendererAvailable 兜底（窗口刚销毁等边缘）。
+  const makeGateway = (projectId: string): ProjectGateway =>
+    projectId && isProjectOpen(projectId) && isRendererAvailable()
+      ? createRendererGateway(projectId)
+      : createDiskGateway(projectId)
 
   const server = http.createServer((req, res) => {
     void (async () => {
@@ -76,14 +84,7 @@ export function startRpcServer(options: RpcServerOptions): Promise<RpcServerHand
         }
         const method = String(parsed.method || '')
         const params = (parsed.params && typeof parsed.params === 'object' ? parsed.params : {}) as Record<string, unknown>
-        // A/B 守卫：app 开着且改的正是打开中的项目 → 拒绝，说人话。
-        if (MUTATION_METHODS.has(method)) {
-          const pid = projectIdOf(params)
-          if (pid && isProjectOpen(pid)) {
-            throw new RpcError('该项目正在 Nomi 中打开；图变更请在 app 内操作，或关闭项目后再用外部调用（实时桥接为后续切片）。', 409)
-          }
-        }
-        const result = await dispatch(method, params, { runTask: options.runTask, fetchTaskResult: options.fetchTaskResult })
+        const result = await dispatch(method, params, { runTask: options.runTask, fetchTaskResult: options.fetchTaskResult, makeGateway })
         send(200, { ok: true, result })
       } catch (error) {
         const status = error instanceof RpcError ? error.httpStatus : 500

@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld("nomiDesktop", {
     extractFrame: (payload: unknown) =>
       ipcRenderer.invoke("nomi:video:extract-frame", payload) as Promise<{ url: string }>,
   },
+  scene3d: {
+    framesToVideo: (payload: unknown) =>
+      ipcRenderer.invoke("nomi:scene3d:frames-to-video", payload) as Promise<{ url: string; assetId?: string }>,
+  },
   exports: {
     startJob: (payload: unknown) => ipcRenderer.invoke("nomi:exports:start-job", payload),
     writeTempInput: (payload: unknown) => ipcRenderer.invoke("nomi:exports:write-temp-input", payload),
@@ -96,6 +100,13 @@ contextBridge.exposeInMainWorld("nomiDesktop", {
   promptLibrary: {
     list: () => ipcRenderer.invoke("nomi:prompt-library:list") as Promise<{ ok: boolean; prompts: unknown[]; error?: string }>,
     textBrain: () => ipcRenderer.invoke("nomi:prompt-library:text-brain") as Promise<{ ok: boolean; brain: { vendor: string; modelKey: string } | null }>,
+    userList: () => ipcRenderer.invoke("nomi:prompt-library:user-list") as Promise<{ ok: boolean; prompts: unknown[]; error?: string }>,
+    userAdd: (input: { title?: string; prompt: string; promptType: "image" | "video" }) =>
+      ipcRenderer.invoke("nomi:prompt-library:user-add", input) as Promise<{ ok: boolean; prompts: unknown[]; error?: string }>,
+    userUpdate: (id: string, patch: { title?: string; prompt?: string; promptType?: "image" | "video" }) =>
+      ipcRenderer.invoke("nomi:prompt-library:user-update", { id, patch }) as Promise<{ ok: boolean; prompts: unknown[]; error?: string }>,
+    userDelete: (id: string) =>
+      ipcRenderer.invoke("nomi:prompt-library:user-delete", { id }) as Promise<{ ok: boolean; prompts: unknown[]; error?: string }>,
   },
   review: {
     onEvent: (callback: (payload: unknown) => void) => {
@@ -162,6 +173,7 @@ contextBridge.exposeInMainWorld("nomiDesktop", {
     check: () => ipcRenderer.invoke("nomi:update:check"),
     download: () => ipcRenderer.invoke("nomi:update:download"),
     install: () => ipcRenderer.invoke("nomi:update:install"),
+    openRelease: () => ipcRenderer.invoke("nomi:update:open-release"),
     onEvent: (callback: (event: unknown) => void) => {
       const listener = (_event: unknown, payload: unknown) => callback(payload);
       ipcRenderer.on("nomi:update:event", listener as never);
@@ -196,12 +208,32 @@ contextBridge.exposeInMainWorld("nomiDesktop", {
     exportPackage: (dirName: string) => invokeSync("nomi:skill:export", dirName),
     importPackage: (payload: unknown) => invokeSync("nomi:skill:import", payload),
   },
-  // 能力核：上报当前窗口打开的项目，供外部调用的 A/B 守卫（防外部直写正在编辑的工程）。
+  // 能力核：上报当前窗口打开的项目，供外部调用的 A/B 路由（决定走渲染层网关还是磁盘网关）。
   capability: {
     setActiveProject: (projectId: string) => ipcRenderer.send("nomi:capability:active-project", projectId),
     // 「接入 AI 编程助手」卡：读状态/配置 + 一键写入/撤销 ~/.claude.json。
     mcpInfo: () => invokeSync("nomi:capability:mcp-info"),
-    installMcp: () => invokeSync("nomi:capability:mcp-install"),
-    uninstallMcp: () => invokeSync("nomi:capability:mcp-uninstall"),
+    installMcp: (client?: string) => invokeSync("nomi:capability:mcp-install", client),
+    uninstallMcp: (client?: string) => invokeSync("nomi:capability:mcp-uninstall", client),
+    // A 模式实时桥：主进程把外部 MCP 的画布读/写/付费确认转发到这里，渲染层处理后回结果（按 id 配对）。
+    onApply: (handler: (op: string, payload: unknown) => unknown | Promise<unknown>) => {
+      const listener = (_event: unknown, message: { id?: number; op?: string; payload?: unknown }) => {
+        const id = message?.id;
+        void (async () => {
+          try {
+            const result = await handler(String(message?.op || ""), message?.payload);
+            ipcRenderer.send("nomi:capability:apply-reply", { id, ok: true, result });
+          } catch (error) {
+            ipcRenderer.send("nomi:capability:apply-reply", {
+              id,
+              ok: false,
+              error: error instanceof Error ? error.message : String(error),
+            });
+          }
+        })();
+      };
+      ipcRenderer.on("nomi:capability:apply", listener);
+      return () => ipcRenderer.removeListener("nomi:capability:apply", listener);
+    },
   },
 });

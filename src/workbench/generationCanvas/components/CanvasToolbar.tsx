@@ -39,7 +39,7 @@ export function NodeAddMenu({
         'generation-canvas-v2-toolbar__node-menu',
         'absolute top-0 left-[calc(100%+8px)] grid gap-1 w-[132px] p-[6px]',
         'border border-workbench-border rounded-nomi',
-        'bg-white/[0.96] shadow-workbench-pop',
+        'bg-nomi-paper shadow-workbench-pop',
         className,
       )}
       role="menu"

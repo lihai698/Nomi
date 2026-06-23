@@ -117,6 +117,12 @@ export type GenerationCanvasState = {
   restoreSnapshot: (snapshot: unknown) => void
   /** S5-b-1 崩溃恢复:把快照之后落盘的事件尾巴重放回投影(reducer 幂等)。 */
   applyEventTail: (events: readonly { type: string; payload: Record<string, unknown> }[]) => void
+  /**
+   * A 模式实时桥:把外部 MCP 经主进程算好的整张画布快照应用进 store(所见即所得)。
+   * 与 restoreSnapshot(硬重置:清视口/选区/重置 undo 基线)不同——这是会话中应用:
+   * 保留视口缩放/偏移、入 undo 历史(用户可撤销外部改动)、触发防抖持久化。
+   */
+  applyExternalGraph: (snapshot: unknown) => void
 } & CanvasNodeActions & CanvasGraphActions & CanvasRunActions
 
 /** Slice creator typed against the store's middleware stack (subscribeWithSelector + immer). */

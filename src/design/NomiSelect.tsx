@@ -1,5 +1,6 @@
 import React from 'react'
 import { Combobox, useCombobox } from '@mantine/core'
+import { IconCheck, IconChevronDown } from '@tabler/icons-react'
 import { cn } from '../utils/cn'
 
 /**
@@ -44,7 +45,7 @@ export type NomiSelectProps = {
   className?: string
 }
 
-const SURFACE_SHADOW = '0 12px 32px rgba(18,24,38,0.14), 0 0 0 1px rgba(18,24,38,0.05)'
+const SURFACE_SHADOW = 'var(--workbench-shadow-pop)'
 
 function toneClass(tone: NomiSelectTone | undefined, kind: 'badge' | 'trailing'): string {
   if (tone === 'accent') return 'bg-nomi-accent-soft text-nomi-accent'
@@ -91,14 +92,14 @@ export function NomiSelect({
           padding: 4,
           maxWidth: 280,
           border: '1px solid var(--nomi-line)',
-          borderRadius: 12,
+          borderRadius: 'var(--nomi-radius-lg)',
           background: 'var(--nomi-paper)',
           boxShadow: SURFACE_SHADOW,
         },
         option: {
           padding: '0 8px 0 9px',
           minHeight: 30,
-          borderRadius: 8,
+          borderRadius: 'var(--nomi-radius-sm)',
         },
       }}
     >
@@ -131,7 +132,7 @@ export function NomiSelect({
               {triggerBadge.text}
             </span>
           ) : null}
-          <span className="shrink-0 text-nomi-ink-40 text-micro leading-none pointer-events-none" aria-hidden>▾</span>
+          <IconChevronDown size={12} stroke={1.6} className="shrink-0 text-nomi-ink-40 pointer-events-none" aria-hidden />
         </button>
       </Combobox.Target>
 
@@ -150,7 +151,9 @@ export function NomiSelect({
                       {option.trailing}
                     </span>
                   ) : null}
-                  <span className={cn('shrink-0 w-3.5 text-center text-nomi-accent text-caption', option.trailing ? '' : 'ml-auto', isSel ? '' : 'invisible')} aria-hidden>✓</span>
+                  <span className={cn('shrink-0 w-3.5 grid place-items-center', option.trailing ? '' : 'ml-auto', isSel ? '' : 'invisible')} aria-hidden>
+                    <IconCheck size={14} stroke={1.6} className="text-nomi-accent" aria-hidden />
+                  </span>
                 </span>
               </Combobox.Option>
             )

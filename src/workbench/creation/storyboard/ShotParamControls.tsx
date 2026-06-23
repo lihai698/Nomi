@@ -88,7 +88,7 @@ export default function ShotParamControls({ modelOption, modeId, params, onUpdat
           aria-expanded={open}
           className={cn(
             'h-6 px-2.5 rounded-full border text-caption inline-flex items-center gap-1',
-            open ? 'border-nomi-accent text-nomi-ink-80 bg-[var(--nomi-ink-05)]' : 'border-nomi-line text-nomi-ink-60 hover:text-nomi-ink-80',
+            open ? 'border-nomi-accent text-nomi-ink-80 bg-nomi-ink-05' : 'border-nomi-line text-nomi-ink-60 hover:text-nomi-ink-80',
           )}
         >
           <IconAdjustmentsHorizontal size={12} stroke={1.8} aria-hidden />
@@ -98,7 +98,7 @@ export default function ShotParamControls({ modelOption, modeId, params, onUpdat
       ) : null}
 
       {open && hasDrawer ? (
-        <div className="w-full mt-1.5 p-2.5 rounded-nomi-sm bg-[var(--nomi-ink-05)] flex flex-col gap-2">
+        <div className="w-full mt-1.5 p-2.5 rounded-nomi-sm bg-nomi-ink-05 flex flex-col gap-2">
           {modes.length > 1 ? (
             <NomiSelect
               ariaLabel="模式"

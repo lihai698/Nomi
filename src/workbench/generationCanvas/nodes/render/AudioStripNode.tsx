@@ -9,6 +9,7 @@
 import React from 'react'
 import { IconPlayerPlay, IconPlayerPause, IconUpload, IconFileText, IconCopy, IconBadgeCc } from '@tabler/icons-react'
 import { cn } from '../../../../utils/cn'
+import { WorkbenchButton } from '../../../../design'
 import { toast } from '../../../../ui/toast'
 import type { GenerationCanvasNode } from '../../model/generationCanvasTypes'
 import { readAudioMeta, AUDIO_KIND_LABELS } from '../../model/nodeMetaFields'
@@ -153,30 +154,30 @@ function AudioStripNodeImpl({ node }: Props): JSX.Element {
     return (
       <div className={cn('w-full h-full rounded-nomi-lg bg-nomi-paper flex items-center gap-3 px-3')}>
         <span className={cn('inline-flex shrink-0 items-center justify-center w-8 h-8 rounded-full bg-nomi-accent-soft text-nomi-accent')}>
-          <IconFileText size={15} stroke={1.8} aria-hidden />
+          <IconFileText size={14} stroke={1.6} aria-hidden />
         </span>
         <p className={cn('flex-1 min-w-0 text-body-sm text-nomi-ink line-clamp-2 leading-snug')} title={result?.text || ''}>
           {result?.text}
         </p>
         <div className={cn('shrink-0 flex items-center gap-1')}>
-          <button
-            type="button"
-            className={cn('inline-flex items-center gap-1 h-7 px-2 rounded-nomi-sm text-caption text-nomi-ink-80 hover:bg-nomi-ink-05')}
+          <WorkbenchButton
+            variant="default"
+            size="sm"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={handleCopyText}
             title="复制转写文本"
           >
-            <IconCopy size={14} stroke={1.8} aria-hidden />复制
-          </button>
-          <button
-            type="button"
-            className={cn('inline-flex items-center gap-1 h-7 px-2.5 rounded-nomi-sm text-caption bg-nomi-ink text-nomi-paper hover:bg-nomi-accent transition-colors')}
+            <IconCopy size={14} stroke={1.6} aria-hidden />复制
+          </WorkbenchButton>
+          <WorkbenchButton
+            variant="primary"
+            size="sm"
             onPointerDown={(event) => event.stopPropagation()}
             onClick={handleGenerateSubtitle}
             title="按转写时间轴生成 SRT 字幕"
           >
-            <IconBadgeCc size={14} stroke={1.8} aria-hidden />生成字幕
-          </button>
+            <IconBadgeCc size={14} stroke={1.6} aria-hidden />生成字幕
+          </WorkbenchButton>
         </div>
       </div>
     )
@@ -212,7 +213,7 @@ function AudioStripNodeImpl({ node }: Props): JSX.Element {
           onPointerDown={(event) => event.stopPropagation()}
           onClick={handleTogglePlay}
         >
-          {isPlaying ? <IconPlayerPause size={14} stroke={1.8} aria-hidden /> : <IconPlayerPlay size={14} stroke={1.8} aria-hidden />}
+          {isPlaying ? <IconPlayerPause size={14} stroke={1.6} aria-hidden /> : <IconPlayerPlay size={14} stroke={1.6} aria-hidden />}
         </button>
       ) : (
         <label
@@ -221,7 +222,7 @@ function AudioStripNodeImpl({ node }: Props): JSX.Element {
           title="上传音频"
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <IconUpload size={14} stroke={1.8} aria-hidden />
+          <IconUpload size={14} stroke={1.6} aria-hidden />
           <input className="hidden" type="file" accept="audio/*" onChange={handleUpload} />
         </label>
       )}
@@ -240,7 +241,7 @@ function AudioStripNodeImpl({ node }: Props): JSX.Element {
       {hasAudio ? (
         <PlayBar progress={progress} onSeek={handleSeek} />
       ) : (
-        <div className="flex-1 min-w-0 text-nomi-ink-40 flex items-center gap-[2px] h-8 opacity-30">
+        <div className="flex-1 min-w-0 text-nomi-ink-20 flex items-center gap-[2px] h-8">
           {[0.4, 0.7, 0.5, 0.9, 0.3, 0.8, 0.6, 0.7, 0.4, 0.8, 0.5, 0.6].map((h, i) => (
             <span key={i} className="flex-1 rounded-full" style={{ height: `${Math.round(h * 100)}%`, background: 'currentColor' }} />
           ))}

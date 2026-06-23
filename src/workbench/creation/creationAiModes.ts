@@ -76,8 +76,8 @@ export const CREATION_AI_MODES: CreationAiMode[] = [
     id: 'storyboard',
     label: '写分镜',
     shortLabel: '分镜',
-    title: '分镜脚本',
-    description: '把剧本拆成 15 秒一集的时间轴分镜。',
+    title: '分镜文字稿',
+    description: '在文稿里起草文字分镜稿（15 秒一集）。要结构化拆镜头、落到画布，直接说「拆镜头」。',
     prompt: [
       '本轮任务：分镜脚本。把当前故事或剧本拆成可生成视频的分镜脚本。',
       '每集包含：素材上传清单、Seedance Prompt、尾帧描述。',

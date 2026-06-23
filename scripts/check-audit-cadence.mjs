@@ -48,7 +48,8 @@ if (count >= THRESHOLD) {
   console.warn(
     `\n⚠️ 审计节奏提醒（规则 14）：距上次审计（${lastDate}）已 ${count} 个 commit ≥ ${THRESHOLD}。\n` +
       `该跑一轮多维审计了：6 角色（规则 7）+ 技术栈/语言/Agent/架构/测试/产品多维度 subagent，\n` +
-      `落 docs/audit/<date>-*.md，清 P0、余项排路线、方案级留用户拍板，并跑 Playwright 走查（规则 13）。\n`,
+      `落 docs/audit/<date>-*.md，清 P0、余项排路线、方案级留用户拍板，并跑 Playwright 走查（规则 13）。\n` +
+      `其中「结构/UX 冗余」维度跑 nomi-ux-audit 技能（同一把尺子五路并行），更新 docs/audit/redundancy-backlog.md 活路线图。\n`,
   );
 } else {
   console.log(`审计节奏：距上次审计（${lastDate}）${count}/${THRESHOLD} 个 commit，未到提醒线。`);

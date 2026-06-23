@@ -11,12 +11,13 @@
 import React from 'react'
 import { Portal } from '@mantine/core'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { IconPhoto, IconPlus, IconSearch, IconX } from '@tabler/icons-react'
+import { IconPhoto, IconPlus, IconX } from '@tabler/icons-react'
 import { cn } from '../../utils/cn'
 import { useAssetPool } from './useAssetPool'
 import { filterAssets, type AssetKind, type AssetRef } from './assetTypes'
 import { ASSET_LIBRARY_DRAG_MIME, serializeAssetLibraryDrag } from './assetLibraryDrag'
 import { AssetThumb } from './AssetTile'
+import { DesignEmptyState, DesignSearchInput } from '../../design'
 
 const GRID_COLS = 3
 const ESTIMATED_ROW_HEIGHT = 121
@@ -257,37 +258,22 @@ export function AssetLibraryPanel({ opened, onClose, projectId }: Props): JSX.El
               )
             })}
           </div>
-          <div className={cn(
-            'flex-1 inline-flex items-center gap-1.5 h-[30px] px-2.5',
-            'border border-nomi-line rounded-full text-nomi-ink-40',
-            'focus-within:border-nomi-accent',
-          )}>
-            <IconSearch size={13} stroke={1.8} />
-            <input
-              className={cn('flex-1 min-w-0 bg-transparent border-0 outline-none text-caption text-nomi-ink placeholder:text-nomi-ink-40')}
-              type="text"
-              value={query}
-              placeholder="搜索素材…"
-              aria-label="搜索素材"
-              onChange={(event) => setQuery(event.currentTarget.value)}
-            />
-          </div>
+          <DesignSearchInput className="flex-1" placeholder="搜索素材…" ariaLabel="搜索素材" value={query} onChange={setQuery} />
         </div>
 
         {/* 网格 / 空态 */}
         <div ref={setScrollEl} className={cn('flex-1 overflow-y-auto px-3.5 pb-4')}>
           {isEmpty ? (
-            <div className={cn('flex flex-col items-center justify-center gap-2.5 px-6 py-12 text-center')}>
-              <IconPhoto size={34} stroke={1.4} className={cn('text-nomi-ink-30')} />
-              <div className={cn('text-body font-semibold text-nomi-ink')}>
-                {assets.length === 0 ? '还没有素材' : '没有匹配的素材'}
-              </div>
-              <div className={cn('text-caption text-nomi-ink-40 leading-relaxed')}>
-                {assets.length === 0
+            <DesignEmptyState
+              density="inline"
+              icon={<IconPhoto size={34} stroke={1.4} className="text-nomi-ink-30" />}
+              title={assets.length === 0 ? '还没有素材' : '没有匹配的素材'}
+              description={
+                assets.length === 0
                   ? '点「上传」导入图片，或在生成区生成后会自动出现在这里。'
-                  : '换个筛选或搜索词试试。'}
-              </div>
-            </div>
+                  : '换个筛选或搜索词试试。'
+              }
+            />
           ) : (
             <div style={{ height: rowVirtualizer.getTotalSize(), width: '100%', position: 'relative' }}>
               {rowVirtualizer.getVirtualItems().map((virtualRow) => {
