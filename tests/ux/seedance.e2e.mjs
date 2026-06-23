@@ -95,6 +95,25 @@ try {
   assert(video, "返回视频 asset（resultJson.resultUrls 解析正确）");
   console.log(`    video=${video.url}`);
 
+  // 5) Mini 变体 model id live 核实：kie 文档页枚举疑似从 fast 页克隆（强制 enum 写 -fast，描述写 -mini）。
+  //    只发 createTask（不轮询出片）确认 `bytedance/seedance-2-mini` 被接受、未 400 unknown-model——省额度。
+  //    若返回 taskId → mini id 真实可用（落地正确）；若失败 → 说明该 id 不被接受，需回退（不落 mini 变体）。
+  const mini = await win.evaluate(async (args) => {
+    try {
+      const r = await window.nomiDesktop.tasks.run({
+        vendor: "kie",
+        request: {
+          kind: "image_to_video",
+          prompt: args.prompt,
+          extras: { modelKey: "bytedance/seedance-2-mini", firstFrameUrl: args.frame, resolution: "480p", aspect_ratio: "16:9", duration: "4", generate_audio: false },
+        },
+      });
+      return { id: r?.id || null, status: r?.status || null, error: null };
+    } catch (e) { return { id: null, status: null, error: String(e?.message || e) }; }
+  }, { prompt: "a gentle slow cinematic zoom-in on the scene", frame: FIRST_FRAME });
+  assert(mini.id, `Mini 变体 createTask 被 kie 接受（model=bytedance/seedance-2-mini, taskId=${mini.id || "—"}${mini.error ? ", err=" + mini.error : ""}）`);
+  console.log(`    mini taskId=${mini.id} status=${mini.status}`);
+
   console.log(`\nSEEDANCE E2E PASS: ${passed} assertions`);
 } catch (error) {
   console.error(`\n${error?.message || error}`);

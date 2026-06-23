@@ -405,10 +405,11 @@ describe('变体轴 — currentArchetypeVariant 回落', () => {
       { id: 'face', label: '真人' },
       { id: 'fast-face', label: '真人快速' },
     ])
-    // kie Seedance 合并后 2 变体。
+    // kie Seedance 合并后 3 变体（标准 / 快速 / Mini）。
     expect(archetypeVariantChoices(getArchetypeById('seedance-2')!)).toEqual([
       { id: 'standard', label: '标准' },
       { id: 'fast', label: '快速' },
+      { id: 'mini', label: 'Mini' },
     ])
     // 无 variants → 空（UI 不显示该段）。
     expect(archetypeVariantChoices(getArchetypeById('happyhorse')!)).toEqual([])
@@ -457,17 +458,20 @@ describe('变体轴 — params 收窄（specializeArchetypeForVariant）', () =>
     const res = ff.modes[0].params.find((p) => p.key === 'resolution')
     expect(res?.options.map((o) => o.value)).toEqual(['480p', '720p'])
   })
-  it('standard / face 变体：resolution 保留 480/720/1080', () => {
-    for (const variantId of ['standard', 'face']) {
-      const arch = specializeArchetypeForVariant(SEEDANCE_APIMART, variantId)
-      const res = arch.modes[0].params.find((p) => p.key === 'resolution')
-      expect(res?.options.map((o) => o.value)).toEqual(['480p', '720p', '1080p'])
-    }
+  it('standard 变体：resolution 含 4k（基础档独占的 2026-06 4K 升级）', () => {
+    const arch = specializeArchetypeForVariant(SEEDANCE_APIMART, 'standard')
+    const res = arch.modes[0].params.find((p) => p.key === 'resolution')
+    expect(res?.options.map((o) => o.value)).toEqual(['480p', '720p', '1080p', '4k'])
   })
-  it('无 variantId → 取默认 standard，不收窄', () => {
-    const arch = specializeArchetypeForVariant(SEEDANCE_APIMART, undefined)
+  it('face 变体：保留 1080p、去 4k（apimart 约束：4k 仅基础档）', () => {
+    const arch = specializeArchetypeForVariant(SEEDANCE_APIMART, 'face')
     const res = arch.modes[0].params.find((p) => p.key === 'resolution')
     expect(res?.options.map((o) => o.value)).toEqual(['480p', '720p', '1080p'])
+  })
+  it('无 variantId → 取默认 standard（含 4k）', () => {
+    const arch = specializeArchetypeForVariant(SEEDANCE_APIMART, undefined)
+    const res = arch.modes[0].params.find((p) => p.key === 'resolution')
+    expect(res?.options.map((o) => o.value)).toEqual(['480p', '720p', '1080p', '4k'])
   })
 })
 
