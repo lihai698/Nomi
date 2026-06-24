@@ -40,6 +40,8 @@ import { buildClipFromGenerationNode } from "../model/buildClipFromGenerationNod
 import { toast } from "../../../ui/toast";
 import { canRunGenerationNode, confirmAndRunNode } from "../runner/generationRunController";
 import { NodeErrorReport } from "./NodeErrorReport";
+import { NodeRecoverableReport } from "./NodeRecoverableReport";
+import { dismissRecoverableNode, recoverNodeResult } from "../runner/recoverTaskActions";
 import { WorkbenchButton } from "../../../design";
 import NodeGenerationComposer from "./NodeGenerationComposer";
 import { completeNodeConnection } from "./completeNodeConnection";
@@ -59,8 +61,8 @@ import {
   getNodeSizeBounds,
   FOCUS_GENERATION_NODE_EVENT,
   clampNumber,
-  readFiniteNumber,
   mediaNodeSize,
+  computeMediaMetaPatch,
   cardFixedSize,
   resolvePreviewHeight,
 } from "./nodeSizing";
@@ -177,49 +179,20 @@ function BaseGenerationNodeImpl({
             );
     };
 
-    const updateMediaDimensions = (width: number, height: number) => {
-        const nextSize = mediaNodeSize(width, height, node.size?.width);
-        if (!nextSize) return;
-        const meta = node.meta || {};
-        const previousWidth = readFiniteNumber(
-            meta.imageWidth ?? meta.videoWidth,
-        );
-        const previousHeight = readFiniteNumber(
-            meta.imageHeight ?? meta.videoHeight,
-        );
-        const userResized = meta.userResized === true;
-        const mediaPatch =
-            node.result?.type === "video"
-                ? {
-                      videoWidth: width,
-                      videoHeight: height,
-                      videoAspectRatio: width / height,
-                  }
-                : {
-                      imageWidth: width,
-                      imageHeight: height,
-                      imageAspectRatio: width / height,
-                  };
-        const shouldPatchSize =
-            !userResized &&
-            (node.size?.width !== nextSize.width ||
-                node.size?.height !== nextSize.height);
-        if (
-            previousWidth === width &&
-            previousHeight === height &&
-            !shouldPatchSize
-        )
-            return;
-        updateNode(node.id, {
-            ...(shouldPatchSize
-                ? { size: { width: nextSize.width, height: nextSize.height } }
-                : {}),
-            meta: {
-                ...meta,
-                ...mediaPatch,
-                previewHeight: nextSize.previewHeight,
-            },
+    const updateMediaDimensions = (
+        width: number,
+        height: number,
+        durationSeconds?: number,
+    ) => {
+        const patch = computeMediaMetaPatch({
+            resultType: node.result?.type,
+            meta: node.meta || {},
+            currentSize: node.size,
+            width,
+            height,
+            durationSeconds,
         });
+        if (patch) updateNode(node.id, patch);
     };
 
     const handleFocusSourceNode = React.useCallback(
@@ -638,6 +611,14 @@ function BaseGenerationNodeImpl({
                 />
             ) : null}
 
+            {/* 可找回态：异步任务超时但上游可能已出片——中性面板 + 一键重新拉取（query 不扣费），不进红色错误桶。 */}
+            {status === "recoverable" ? (
+                <NodeRecoverableReport
+                    onRecover={() => { void recoverNodeResult(node.id) }}
+                    onDismiss={() => { dismissRecoverableNode(node.id) }}
+                />
+            ) : null}
+
             {/* [DESIGN-CARDS-07] 卡片分发：非 shots 分类渲染对应 card 组件（preview div + composer 隐藏）。 */}
             {isCardKind ? (
                 <div className='w-full h-full rounded-nomi shadow-nomi-md overflow-hidden ring-1 ring-inset ring-nomi-line'>
@@ -744,6 +725,7 @@ function BaseGenerationNodeImpl({
                                 updateMediaDimensions(
                                     event.currentTarget.videoWidth,
                                     event.currentTarget.videoHeight,
+                                    event.currentTarget.duration,
                                 );
                             }}
                             onError={(event) => {

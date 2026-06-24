@@ -10,6 +10,7 @@ export type GenerationProgressPhase =
   | 'requesting' //  正在把任务发给模型(vendor HTTP 出门)
   | 'waiting' //     模型已接单,排队中(拿到 taskId,首个非终态)
   | 'generating' //  模型生成中(轮询进行时)
+  | 'still-generating' // 超过常规时长仍在生成(软超时后,后台继续等结果)
   | 'retrying' //    网络波动重试中
   | 'finalizing' //  正在保存结果(本地化/归一)
 
@@ -28,6 +29,11 @@ const NARRATE_PROGRESS: Record<GenerationProgressPhase, (ctx: ProgressNarrationC
     typeof ctx.elapsedMs === 'number' && ctx.elapsedMs >= 5000
       ? `正在生成,已等 ${Math.round(ctx.elapsedMs / 1000)} 秒`
       : '正在生成',
+  // 软超时后:视频较慢仍在跑,后台继续等。说真话(已等 N 分钟),不假装快完成。
+  'still-generating': (ctx) =>
+    typeof ctx.elapsedMs === 'number'
+      ? `仍在生成 · 已超常规时长(已等 ${Math.round(ctx.elapsedMs / 60000)} 分钟)`
+      : '仍在生成 · 已超常规时长',
   retrying: (ctx) =>
     ctx.attempt && ctx.maxAttempts ? `网络波动,正在重试(${ctx.attempt}/${ctx.maxAttempts})` : '网络波动,正在重试',
   finalizing: () => '正在保存结果',

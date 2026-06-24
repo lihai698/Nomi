@@ -16,7 +16,7 @@ import { runAudioTask } from "./audioTaskRunner";
 import { firstString, isJsonRecord, nowIso, trim, type JsonRecord } from "./jsonUtils";
 import { collectAssetUrls, firstMappedString, providerMetaFromResponse, taskStatusFromResponse, valuesFromMapping } from "./tasks/responseParsing";
 import { TtlLruCache } from "./tasks/taskCache";
-import { classifyTaskCacheMiss, markTaskAdmitted, wasTaskAdmitted } from "./tasks/taskAdmission";
+import { markTaskAdmitted } from "./tasks/taskAdmission";
 import { collectFilesRecursively, parseDataUrl } from "./assets/assetBytes";
 import { assetBucketFromMeta, assetKindFromContentType, contentTypeFromPath, extensionFromMime, extensionFromUrl, localAssetUrl, stableAssetId } from "./assets/assetPaths";
 import { readCachedTaskResult, recipeFingerprint, rememberTaskResult } from "./vendor/fingerprintCache";
@@ -154,15 +154,15 @@ export type TaskResult = {
 };
 
 // TTL(1h) + LRU(200) 上限，防异步任务条目无界驻留（P0-7）。不再缓存明文 apiKey。
-const taskCache = new TtlLruCache<CachedTask>({ maxEntries: 200, ttlMs: 60 * 60 * 1000 });
+export const taskCache = new TtlLruCache<CachedTask>({ maxEntries: 200, ttlMs: 60 * 60 * 1000 });
 
 /** 受理一个异步任务：写工作缓存 + 记账本（单一入口，所有 admit 点同源，防漏记）。 */
-function admitTask(id: string, entry: CachedTask): void {
+export function admitTask(id: string, entry: CachedTask): void {
   taskCache.set(id, entry);
   markTaskAdmitted(id);
 }
 
-type CachedTask = {
+export type CachedTask = {
   vendor: string;
   request: TaskRequest;
   raw: unknown;
@@ -320,7 +320,7 @@ export function listProjectAssets(payload: unknown): { items: LocalAssetRecord[]
   };
 }
 
-function findExecutableModel(vendorKey: string, modelKey: string, kind?: BillingModelKind): { vendor: Vendor; model: Model; apiKey: string } {
+export function findExecutableModel(vendorKey: string, modelKey: string, kind?: BillingModelKind): { vendor: Vendor; model: Model; apiKey: string } {
   const state = readCatalog();
   const vendor = state.vendors.find((item) => item.key === vendorKey && item.enabled);
   if (!vendor) throw new Error(`Vendor is not enabled: ${vendorKey}`);
@@ -355,7 +355,7 @@ export function billingKindForTaskKind(kind: ProfileKind): BillingModelKind {
   return "image";
 }
 
-function extractAssetUrl(raw: unknown): string {
+export function extractAssetUrl(raw: unknown): string {
   if (!raw || typeof raw !== "object") return "";
   const record = raw as JsonRecord;
   const candidates = [
@@ -374,7 +374,7 @@ function extractAssetUrl(raw: unknown): string {
   return firstString(...candidates);
 }
 
-async function localizeTaskAsset(projectId: string, assetUrl: string, type: "image" | "video" | "audio", nodeId?: string): Promise<TaskResult["assets"][number]> {
+export async function localizeTaskAsset(projectId: string, assetUrl: string, type: "image" | "video" | "audio", nodeId?: string): Promise<TaskResult["assets"][number]> {
   const imported = await importRemoteAsset({
     projectId,
     url: assetUrl,
@@ -394,7 +394,7 @@ async function localizeTaskAsset(projectId: string, assetUrl: string, type: "ima
   };
 }
 
-function findTaskMapping(vendorKey: string, taskKind: ProfileKind, modelKey?: string): Mapping | null {
+export function findTaskMapping(vendorKey: string, taskKind: ProfileKind, modelKey?: string): Mapping | null {
   // 按 (vendor, taskKind, modelKey) 选——同 vendor 下两个模型共用一个 taskKind 但请求形状不同时
   // （如 HappyHorse 与 Kling 都 text_to_video），靠 modelKey 精确路由，不再「第一个赢、另一个套错模板」。
   return selectTaskMapping(readCatalog().mappings, vendorKey, taskKind, modelKey);
@@ -642,94 +642,7 @@ export async function runTask(payload: unknown): Promise<TaskResult> {
   return finalResult;
 }
 
-export async function fetchTaskResult(payload: unknown): Promise<{ vendor: string; result: TaskResult }> {
-  const raw = payload as JsonRecord;
-  const taskId = trim(raw.taskId);
-  const cached = taskCache.get(taskId);
-  if (!cached) {
-    // 区分两种 miss：曾受理但被驱逐/过期(可能 vendor 侧已完成) vs 真·未知 id（修 P1）。
-    const miss = classifyTaskCacheMiss(taskId, wasTaskAdmitted(taskId));
-    return {
-      vendor: trim(raw.vendor),
-      result: {
-        id: taskId,
-        kind: (raw.taskKind as ProfileKind) || "text_to_image",
-        status: miss.status,
-        assets: [],
-        raw: miss.raw,
-      },
-    };
-  }
-  const queryOperation = cached.mapping?.query;
-  if (cached.mapping && queryOperation && cached.model) {
-    // 不再用缓存的明文 key，轮询时按 vendor 重新派生（并重新校验 key 仍可用）。
-    const { vendor, model, apiKey } = findExecutableModel(
-      cached.vendor,
-      cached.model.modelKey,
-      cached.wantedKind,
-    );
-    const executed = await executeProfileOperation({
-      vendor,
-      model,
-      apiKey,
-      request: cached.request,
-      operation: queryOperation,
-      providerMeta: {
-        ...(cached.providerMeta || {}),
-        query_id: cached.providerMeta?.query_id || taskId,
-        task_id: cached.providerMeta?.task_id || taskId,
-      },
-    });
-    const normalized = await buildProfileTaskResult({
-      response: executed.response,
-      mapping: cached.mapping,
-      operation: queryOperation,
-      request: cached.request,
-      taskIdFallback: taskId,
-      wantedKind: cached.wantedKind || model.kind,
-      projectId: cached.projectId,
-      nodeId: cached.nodeId,
-      vendor,
-      model,
-    });
-    if (normalized.result.status === "succeeded" || normalized.result.status === "failed") {
-      // 终态才入日志(轮询 tick 不记);cache.delete 保证单次触发
-      traceVendorCompleted(cached.projectId, { runId: taskId, nodeId: cached.nodeId, status: normalized.result.status, assetCount: normalized.result.assets.length });
-      rememberTaskResult(cached.projectId || "", cached.fingerprint, normalized.result);
-      taskCache.delete(taskId);
-    } else {
-      admitTask(taskId, {
-        ...cached,
-        raw: executed.response,
-        providerMeta: {
-          ...(cached.providerMeta || {}),
-          ...normalized.providerMeta,
-        },
-      });
-    }
-    return { vendor: cached.vendor, result: normalized.result };
-  }
-
-  const assetUrl = extractAssetUrl(cached.raw);
-  if (assetUrl) {
-    const type: "image" | "video" = cached.wantedKind === "video" ? "video" : "image";
-    const asset = cached.projectId
-      ? await localizeTaskAsset(cached.projectId, assetUrl, type, cached.nodeId)
-      : { type, url: assetUrl, thumbnailUrl: type === "image" ? assetUrl : null };
-    taskCache.delete(taskId);
-    const lateResult: TaskResult = { id: taskId, kind: cached.request.kind, status: "succeeded", assets: [asset], raw: cached.raw };
-    rememberTaskResult(cached.projectId || "", cached.fingerprint, lateResult);
-    return { vendor: cached.vendor, result: lateResult };
-  }
-
-  return {
-    vendor: cached.vendor,
-    result: {
-      id: taskId,
-      kind: cached.request.kind,
-      status: "queued",
-      assets: [],
-      raw: cached.raw,
-    },
-  };
-}
+// 异步任务「续查」已拆到 ./tasks/taskResultQuery（巨壳门岗·只减不增 R12）。
+// 该模块从本文件取 executeProfileOperation/buildProfileTaskResult/findExecutableModel/findTaskMapping/
+// extractAssetUrl/localizeTaskAsset/admitTask/taskCache（调用时循环依赖，安全）。对外导出面不变。
+export { fetchTaskResult } from "./tasks/taskResultQuery";

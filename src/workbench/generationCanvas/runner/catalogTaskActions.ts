@@ -27,6 +27,7 @@ import {
   uniqueStrings,
 } from './catalogTaskResolve'
 import { normalizeCatalogTaskResult } from './catalogTaskResultParse'
+import { RecoverableTimeoutError } from './recoverableTimeout'
 
 // 重导出：实现已拆到 catalogTaskResolve（节点→vendor/model/kind 选择）与
 // catalogTaskResultParse（raw/asset/failure/provenance 解析），但 catalogTaskActions
@@ -166,20 +167,31 @@ async function waitForCatalogTaskResult(
 ): Promise<TaskResultDto> {
   if (TERMINAL_STATUSES.has(initialResult.status)) return initialResult
   const pollIntervalMs = options.pollIntervalMs ?? 1500
-  const defaultTimeout = (request.kind === 'text_to_video' || request.kind === 'image_to_video') ? 300000 : 120000
-  const pollTimeoutMs = options.pollTimeoutMs ?? defaultTimeout
+  const isVideo = request.kind === 'text_to_video' || request.kind === 'image_to_video'
+  // 软超时：到点不报错，只把文案切成「仍在生成·已超常规时长」，后台继续等（视频 5min→续拉到 hard）。
+  // 硬超时：真停，抛可找回错误（视频 20min；非视频 2min）。options.pollTimeoutMs 覆盖时 soft=hard（测试可控）。
+  const softTimeoutMs = options.pollTimeoutMs ?? (isVideo ? 300000 : 120000)
+  const hardTimeoutMs = options.pollTimeoutMs ?? (isVideo ? 1200000 : 120000)
   const startedAt = Date.now()
   const fetchResult = options.fetchTaskResult || fetchWorkbenchTaskResultByVendor
 
   let current = initialResult
   while (!TERMINAL_STATUSES.has(current.status)) {
-    if (Date.now() - startedAt > pollTimeoutMs) {
-      throw new Error(`模型任务轮询超时: ${initialResult.id}`)
+    const elapsedMs = Date.now() - startedAt
+    if (elapsedMs > hardTimeoutMs) {
+      // 超时≠失败：上游可能仍在跑/已出片 → 抛可找回错误，节点落 recoverable，给「重新拉取」入口。
+      throw new RecoverableTimeoutError({
+        taskId: initialResult.id,
+        vendor,
+        taskKind: request.kind,
+        modelKey: asTrimmedString(request.extras?.modelKey),
+      })
     }
-    // S2:每个轮询 tick 回报进度(人话 + 已等秒数),不再静默吞掉 status。
+    // S2:每个轮询 tick 回报进度(人话 + 已等秒数),不再静默吞掉 status。软超时后切「仍在生成·已超常规时长」。
+    const overSoft = elapsedMs > softTimeoutMs
     options.onProgress?.({
-      phase: 'generating',
-      message: narrateProgress('generating', { elapsedMs: Date.now() - startedAt }),
+      phase: overSoft ? 'still-generating' : 'generating',
+      message: narrateProgress(overSoft ? 'still-generating' : 'generating', { elapsedMs }),
       taskId: initialResult.id,
     })
     await delay(pollIntervalMs)

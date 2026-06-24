@@ -215,6 +215,32 @@ describe('runCatalogGenerationTask — 断开 kie 后老节点自动迁移到已
   })
 })
 
+describe('runCatalogGenerationTask — 轮询硬超时抛 RecoverableTimeoutError（可找回，非普通失败）', () => {
+  const videoNode: GenerationCanvasNode = {
+    id: 'v1', kind: 'video', title: '', position: { x: 0, y: 0 }, prompt: '一只猫跑过草地',
+    meta: { modelKey: 'vid', vendor: 'asyncv' },
+  }
+
+  it('超时抛 RecoverableTimeoutError，detail 带 taskId/vendor/taskKind，且软超时后回报 still-generating', async () => {
+    const { isRecoverableTimeoutError, RecoverableTimeoutError } = await import('./recoverableTimeout')
+    const phases: string[] = []
+    const error = await runCatalogGenerationTask(videoNode, {
+      // 首发拿到 taskId、非终态 → 进轮询
+      runTask: async (_v, req) => ({ id: 'up-task-9', kind: req.kind, status: 'queued' as const, assets: [], raw: {} }),
+      // 始终非终态 → 必定走到硬超时
+      fetchTaskResult: async () => ({ vendor: 'asyncv', result: { id: 'up-task-9', kind: 'text_to_video' as const, status: 'queued' as const, assets: [], raw: {} } }),
+      pollIntervalMs: 1,
+      pollTimeoutMs: 4, // soft=hard=4ms（覆盖时收敛），几个 tick 即超时
+      onProgress: (p) => { if (p.phase) phases.push(p.phase) },
+    }).catch((e) => e)
+
+    expect(isRecoverableTimeoutError(error)).toBe(true)
+    expect((error as InstanceType<typeof RecoverableTimeoutError>).detail).toMatchObject({
+      taskId: 'up-task-9', vendor: 'asyncv', taskKind: 'text_to_video', modelKey: 'vid',
+    })
+  })
+})
+
 describe('normalizeCatalogTaskResult — image path unaffected', () => {
   it('still returns an image result from an asset', () => {
     const result = normalizeCatalogTaskResult(

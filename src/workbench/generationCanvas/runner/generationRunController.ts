@@ -8,6 +8,7 @@ import { mintSpendGrant } from '../../api/taskApi'
 import { describeGenerationCost, useSpendConfirmStore } from '../spend/spendConfirm'
 import { generationNodeExecutor, type GenerationNodeExecutor } from './generationNodeExecutor'
 import { narrateProgress } from '../../observability/narrate'
+import { isRecoverableTimeoutError } from './recoverableTimeout'
 // 错误分类(classifyGenerationError)已抽到 observability/classifyError(人话叶子层,生成域+对话域共用);
 // 这里 re-export 保持 NodeErrorReport / classifyGenerationError.test 等既有 import 不破。
 export { classifyGenerationError, type GenerationErrorReport } from '../../observability/classifyError'
@@ -161,6 +162,12 @@ export async function runGenerationNode(
     await persistActiveWorkbenchProjectNow().catch(() => {})
     return result
   } catch (error: unknown) {
+    // 可找回超时：上游可能仍在跑/已出片 → 落 recoverable（不进红色错误桶），给「重新拉取」入口。
+    // taskId 已在 run 记录里持久化，recover 动作从节点重建续查（重启后也能拉）。
+    if (isRecoverableTimeoutError(error)) {
+      useGenerationCanvasStore.getState().setNodeStatus(id, 'recoverable', error.message)
+      throw error
+    }
     // Store the RAW message; the UI (NodeErrorReport) runs classifyGenerationError
     // to show a human reason + hint + the raw detail. Keeping node.error a plain
     // string avoids a persisted-shape migration for existing project files.
