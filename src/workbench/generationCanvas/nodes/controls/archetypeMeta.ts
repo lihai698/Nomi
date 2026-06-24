@@ -19,6 +19,7 @@ import {
   type ModelArchetype,
   type ModelArchetypeVariant,
   resolveArchetypeForModel,
+  specializeArchetypeForVariant,
 } from '../../../../config/modelArchetypes'
 import type { ImageUrlSlot } from './parameterControlModel'
 
@@ -246,8 +247,29 @@ export function applyArchetypeModeSwitch(
 }
 
 /**
- * 切到 nextVariantId：只改 node.meta.archetype.variantId（对称 applyArchetypeModeSwitch；不动 modeId、
- * 不动参考值）。返回**整份新 meta**。无效 variantId → 回落默认。无 variants 档案 → no-op（原样返回 meta）。
+ * 把存量 meta 里「已不在新变体允许选项内」的 select 参数夹回该参数的 defaultValue（通用·按档案声明派生，
+ * 不 hardcode 任何 key）。根治 D1：标准变体选了 4k → 切到「快速」变体（清晰度只剩 480/720）→ 存量 4k
+ * 仍被发出 → 供应商 400/422。变体只收窄「选项」，本函数顺带收窄「已存的值」，让 UI 与发送一致。
+ */
+function clampMetaToModeParams(meta: Record<string, unknown>, modeParams: ModelParameterControl[]): Record<string, unknown> {
+  let next = meta
+  for (const param of modeParams) {
+    if (param.type !== 'select' || !param.options || param.options.length === 0) continue
+    if (!(param.key in next)) continue
+    const allowed = param.options.map((o) => o.value)
+    if (allowed.includes(next[param.key] as string)) continue
+    // 存量值越界 → 回落该参数 defaultValue（无 default 则删键，由下游取档案默认）。
+    next = { ...next }
+    if (param.defaultValue !== undefined) next[param.key] = param.defaultValue
+    else delete next[param.key]
+  }
+  return next
+}
+
+/**
+ * 切到 nextVariantId：改 node.meta.archetype.variantId（对称 applyArchetypeModeSwitch；不动 modeId、
+ * 不动参考值）+ 夹取被新变体收窄掉的越界参数值（D1）。返回**整份新 meta**。无效 variantId → 回落默认。
+ * 无 variants 档案 → no-op（原样返回 meta）。
  */
 export function applyArchetypeVariantSwitch(
   meta: Record<string, unknown>,
@@ -259,7 +281,11 @@ export function applyArchetypeVariantSwitch(
   const stored = readArchetypeNodeMeta(meta)
   const modeId = (stored?.id === archetype.id && stored.modeId) ? stored.modeId : archetype.defaultModeId
   const nextVariant = variants.find((v) => v.id === nextVariantId) ?? variants.find((v) => v.id === archetype.defaultVariantId) ?? variants[0]
-  return { ...meta, archetype: { id: archetype.id, modeId, variantId: nextVariant.id } }
+  // 按新变体特化出当前模式的参数声明，把存量越界的 select 值夹回默认（D1：4k→fast 变体不再漏发）。
+  const specialized = specializeArchetypeForVariant(archetype, nextVariant.id)
+  const mode = specialized.modes.find((m) => m.id === modeId) ?? specialized.modes.find((m) => m.id === specialized.defaultModeId) ?? specialized.modes[0]
+  const clamped = mode ? clampMetaToModeParams(meta, mode.params) : meta
+  return { ...clamped, archetype: { id: archetype.id, modeId, variantId: nextVariant.id } }
 }
 
 /**
@@ -423,7 +449,13 @@ export function orderedSentImageReferenceUrls(
 export function buildArchetypeInputParams(
   meta: Record<string, unknown>,
   archetype: ModelArchetype,
-  references?: { firstFrameUrl?: string | null; lastFrameUrl?: string | null; referenceImages?: readonly string[] },
+  references?: {
+    firstFrameUrl?: string | null
+    lastFrameUrl?: string | null
+    referenceImages?: readonly string[]
+    referenceVideos?: readonly string[]
+    referenceAudios?: readonly string[]
+  },
 ): Record<string, ArchetypeInputValue> {
   const mode = currentArchetypeMode(archetype, meta)
   const out: Record<string, ArchetypeInputValue> = {}
@@ -437,7 +469,12 @@ export function buildArchetypeInputParams(
       // @ 候选、@ 投影 character{N} 同一顺序，杜绝张冠李戴。仅 image 槽收图片边（video/audio 槽不污染，
       // edgeList=[]）；cap 顺带封死手动超额导致的 vendor 422。
       const metaList = readArchetypeArray(meta, arr.metaKey)
-      const edgeList = arr.accept === 'image' ? (references?.referenceImages ?? []) : []
+      // 按槽资产类型喂对应的连线参考（B4：video_ref/audio_ref 槽此前只收 meta 上传，连线的视频/音频被丢）。
+      const edgeList =
+        arr.accept === 'image' ? (references?.referenceImages ?? [])
+        : arr.accept === 'video' ? (references?.referenceVideos ?? [])
+        : arr.accept === 'audio' ? (references?.referenceAudios ?? [])
+        : []
       const capped = mergeOrderedReferenceImageUrls(edgeList, metaList, slot.max)
       if (capped.length) {
         if (inputKey === 'volcengine_image_contents') {

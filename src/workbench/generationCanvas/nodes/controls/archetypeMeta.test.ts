@@ -223,6 +223,24 @@ describe('切片1 — 画布边参考图喂进档案 image 槽（修边投递裂
   })
 })
 
+describe('D1 — 切变体夹取越界参数值（4k→fast 不再漏发被供应商打回）', () => {
+  const APIMART = getArchetypeById('seedance-2-apimart')!
+  it('标准(含4k) → 快速(仅480/720)：存量 4k 夹回默认 720p', () => {
+    const meta = { archetype: { id: 'seedance-2-apimart', modeId: 't2v', variantId: 'standard' }, resolution: '4k', size: '21:9' }
+    const next = applyArchetypeVariantSwitch(meta, APIMART, 'fast')
+    expect(next.resolution).toBe('720p') // 4k 不在 fast 选项内 → 夹回 defaultValue
+    expect((next.archetype as { variantId: string }).variantId).toBe('fast')
+    expect(next.size).toBe('21:9') // size 在 fast 仍允许（同选项）→ 不动
+  })
+  it('标准 → 真人(含1080,无4k)：1080p 保留、4k 才夹回', () => {
+    expect(applyArchetypeVariantSwitch({ archetype: { id: 'seedance-2-apimart', modeId: 't2v', variantId: 'standard' }, resolution: '1080p' }, APIMART, 'face').resolution).toBe('1080p')
+    expect(applyArchetypeVariantSwitch({ archetype: { id: 'seedance-2-apimart', modeId: 't2v', variantId: 'standard' }, resolution: '4k' }, APIMART, 'face').resolution).toBe('720p')
+  })
+  it('切回标准(含全集)：不夹取（4k 合法保留）', () => {
+    expect(applyArchetypeVariantSwitch({ archetype: { id: 'seedance-2-apimart', modeId: 't2v', variantId: 'fast' }, resolution: '720p' }, APIMART, 'standard').resolution).toBe('720p')
+  })
+})
+
 describe('option 2 单源 — 「有序参考图」连线在前、上传在后（面板/@/发送共用）', () => {
   it('mergeOrderedReferenceImageUrls：边在前、上传在后、去重、截到 maxCap', () => {
     expect(mergeOrderedReferenceImageUrls(['e1', 'e2'], ['u1', 'u2'], 9)).toEqual(['e1', 'e2', 'u1', 'u2'])

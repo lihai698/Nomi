@@ -76,6 +76,9 @@ function buildReferenceExtras(
       // 切片1：把画布边产出的实时参考图喂进档案 image 槽（此前只读 meta，边的角色图被丢）。
       // referenceImages 已是 meta.referenceImages + 边超集的去重并集。
       referenceImages,
+      // B4：连线进来的视频/音频参考喂进 video_ref/audio_ref 槽（此前只收 meta 上传）。
+      referenceVideos: references.referenceVideos || [],
+      referenceAudios: references.referenceAudios || [],
     })
     return {
       ...(referenceImages.length ? { referenceImages } : {}),
