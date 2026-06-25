@@ -128,7 +128,8 @@ function readFileDataUrl(file: File): Promise<string> {
   })
 }
 
-/** 仅 image / video 可导入为画布素材节点（音频暂无可落节点，过滤掉）。 */
+/** 画布素材节点只承载 image / video（无音频节点 archetype）。音频上传走项目文件源进库
+ *  （importAudioFilesToLibrary），不经此路；这里过滤掉是为画布节点导入语义正确。 */
 function importKindForFile(file: File): 'image' | 'video' | null {
   const kind = dropKindFromMime(file.type)
   return kind === 'image' || kind === 'video' ? kind : null

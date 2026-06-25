@@ -16,6 +16,7 @@ import { cn } from '../../utils/cn'
 import { useAssetPool } from './useAssetPool'
 import { filterAssets, type AssetKind, type AssetRef } from './assetTypes'
 import { ASSET_LIBRARY_DRAG_MIME, serializeAssetLibraryDrag } from './assetLibraryDrag'
+import { importAudioFilesToLibrary, isAudioFile } from './importAudioToLibrary'
 import { AssetThumb } from './AssetTile'
 import { DesignEmptyState, DesignSearchInput } from '../../design'
 
@@ -25,6 +26,15 @@ const ESTIMATED_ROW_HEIGHT = 121
 const PANEL_WIDTH = 380
 const TOP_OFFSET = 64
 const RIGHT_OFFSET = 12
+
+// 通配 + 显式扩展名一起列：macOS/Chromium 对纯 `video/*`/`audio/*` 通配常因 MIME 映射不到而把
+// .mp4/.mov/.mp3 灰掉（MDN 推荐补显式扩展名）。覆盖素材库三类（图/视频/音频）的常见格式。
+const UPLOAD_ACCEPT = [
+  'image/*', 'video/*', 'audio/*',
+  '.png', '.jpg', '.jpeg', '.webp', '.gif',
+  '.mp4', '.mov', '.m4v', '.webm',
+  '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac',
+].join(',')
 
 type FilterValue = 'all' | AssetKind
 
@@ -97,7 +107,7 @@ export function AssetLibraryPanel({ opened, onClose, projectId }: Props): JSX.El
   const [filter, setFilter] = React.useState<FilterValue>('all')
   const [query, setQuery] = React.useState('')
 
-  const { assets } = useAssetPool(projectId)
+  const { assets, refresh } = useAssetPool(projectId)
 
   const visible = React.useMemo(
     () => filterAssets(assets, { query, accept: filter === 'all' ? undefined : [filter] }),
@@ -157,20 +167,28 @@ export function AssetLibraryPanel({ opened, onClose, projectId }: Props): JSX.El
   }, [opened, onClose])
 
   const handleUploadFiles = React.useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.currentTarget.files || []).filter((file) => {
-      const type = file.type || ''
-      return type.startsWith('image/') || type.startsWith('video/')
-    })
+    const all = Array.from(event.currentTarget.files || [])
     event.currentTarget.value = ''
-    if (!files.length) return
-    void import('../generationCanvas/adapters/assetImportAdapter')
-      .then(({ importLocalMediaFilesToGenerationCanvas }) => {
-        void importLocalMediaFilesToGenerationCanvas(files, { basePosition: { x: 120, y: 90 } })
-      })
-      .catch((error) => {
-        console.error('asset library upload failed', error)
-      })
-  }, [])
+    // 图/视频走画布节点导入（可拖到画布）；音频没有画布节点，落项目文件源进库（音频 tab）。
+    const mediaFiles = all.filter((file) => (file.type || '').startsWith('image/') || (file.type || '').startsWith('video/'))
+    const audioFiles = all.filter((file) => isAudioFile(file))
+    if (mediaFiles.length) {
+      void import('../generationCanvas/adapters/assetImportAdapter')
+        .then(({ importLocalMediaFilesToGenerationCanvas }) => {
+          void importLocalMediaFilesToGenerationCanvas(mediaFiles, { basePosition: { x: 120, y: 90 } })
+        })
+        .catch((error) => {
+          console.error('asset library upload failed', error)
+        })
+    }
+    if (audioFiles.length) {
+      void importAudioFilesToLibrary(audioFiles, { projectId })
+        .then(() => refresh())
+        .catch((error) => {
+          console.error('asset library audio upload failed', error)
+        })
+    }
+  }, [projectId, refresh])
 
   if (!opened) return null
 
@@ -229,7 +247,7 @@ export function AssetLibraryPanel({ opened, onClose, projectId }: Props): JSX.El
             ref={uploadInputRef}
             className={cn('absolute w-px h-px overflow-hidden opacity-0 pointer-events-none')}
             type="file"
-            accept="image/*,video/*"
+            accept={UPLOAD_ACCEPT}
             multiple
             aria-label="素材文件选择器"
             onChange={handleUploadFiles}
@@ -273,7 +291,7 @@ export function AssetLibraryPanel({ opened, onClose, projectId }: Props): JSX.El
               title={assets.length === 0 ? '还没有素材' : '没有匹配的素材'}
               description={
                 assets.length === 0
-                  ? '点「上传」导入图片或视频，或在生成区生成后会自动出现在这里。'
+                  ? '点「上传」导入图片、视频或音频，或在生成区生成后会自动出现在这里。'
                   : '换个筛选或搜索词试试。'
               }
             />
