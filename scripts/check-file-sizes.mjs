@@ -29,8 +29,10 @@ const ALLOWLIST = {
   "src/workbench/generationCanvas/nodes/BaseGenerationNode.tsx": 887,
   // PR#21 白板节点引入（2026-06-25）：WhiteboardDrawingTool 已按 Rule 9 拆出 WhiteboardToolbarControls.tsx +
   // whiteboardStateOps.ts，壳缩到 760 < 800，已出白名单。WhiteboardLeaferCanvas 已抽出 whiteboardCanvasTypes/
-  // Export/NodeOps/Geometry 四个纯模块（壳 3406→2220）；组件本体 hook 化进行中，目标 < 800 后出白名单。
-  "src/workbench/generationCanvas/nodes/whiteboard/WhiteboardLeaferCanvas.tsx": 2220,
+  // Export/NodeOps/Geometry 四个纯模块 + whiteboardSceneRender.ts（渲染树构建）；壳 3406→1921。
+  // 剩余 = 交互层（选择/翻转/编组 handler 链 + 键盘/右键菜单 + 绘制 + 框选），需自定义 hook + 共享 ctx 重构，
+  // 风险较高、须配 R13 走查，留作专项后续（见 docs/plan/2026-06-25-whiteboard-shell-split.md）。
+  "src/workbench/generationCanvas/nodes/whiteboard/WhiteboardLeaferCanvas.tsx": 1921,
   // generationCanvasStore.ts 曾 871 行（巨壳）；S5-0 按 zustand slice 模式拆出 canvasStoreTypes.ts +
   // canvasNodeActions.ts + canvasGraphActions.ts + canvasRunActions.ts 后壳文件缩到 161 < 800，已出白名单。
   // NodeParameterControls.tsx 曾 1097 行（巨壳）；C2b 抽出 controls/parameterControlModel.ts +

@@ -13,7 +13,6 @@ import {
 import type { AspectRatioKey, CanvasAsset, CanvasDimensions, LayerItem, ToolKey } from './lib/canvas'
 import { getCanvasPointFromClient } from './lib/pointer'
 import { createSmoothStrokePath, normalizePointerPoint, type PointerPoint } from './lib/stroke'
-import { MIN_ASSET_SIZE } from './whiteboardCanvasTypes'
 import type {
   CanvasAssetTransform,
   CanvasNodeInteractionState,
@@ -37,22 +36,17 @@ import {
   fitLeaferCanvasToHost,
 } from './whiteboardCanvasExport'
 import {
-  addCanvasObjectGroup,
   getCanvasNodeBounds,
   getCanvasNodeInteractionState,
   getCanvasObjectTarget,
   getFiniteNumber,
-  getFlippedContentGroupProps,
   getObjectFlipState,
   getObjectKey,
-  getObjectOffset,
-  getSvgPathBounds,
   isPointInsideBounds,
   setCanvasNodeInteractionState,
   setCircleGeometry,
   shouldAppendPoint,
   shouldBlockErasedSelection,
-  translatePathToLocal,
 } from './whiteboardCanvasNodeOps'
 import {
   areCanvasTargetArraysEqual,
@@ -62,22 +56,20 @@ import {
   getCanvasHitRadiusFromStageBounds,
   getCanvasTargetsUnionBounds,
   getKeyboardMoveDelta,
-  getLayerBaseBounds,
   getLayerIdForCanvasObject,
   getMinimumAssetScale,
   getSelectableCanvasObjectsInBounds,
   getSnappedCanvasMove,
   getSvgRectAttributes,
   getTopmostEditableCanvasObjectAtPoint,
-  groupItemsByLayer,
   isCanvasContextMenuEvent,
-  isCanvasGroupLayer,
   isEditableKeyboardTarget,
   isPointNearSingleAssetResizeHandle,
   normalizeAssetBounds,
   normalizeCanvasBounds,
   shouldBlockEditorTargetInteraction,
 } from './whiteboardCanvasGeometry'
+import { renderWhiteboardScene } from './whiteboardSceneRender'
 
 export type { CanvasObjectTarget, CanvasStroke } from './whiteboardCanvasTypes'
 
@@ -448,311 +440,20 @@ export const LeaferCanvas = forwardRef<LeaferCanvasHandle, LeaferCanvasProps>(fu
       return
     }
 
-    const { Box, Group, Image, Path, PathCommandMap, PathConvert, PathNumberCommandLengthMap, Rect, rootGroup } =
-      context
-    const pathTools = { PathCommandMap, PathConvert, PathNumberCommandLengthMap }
-    rootGroup.clear()
-    layerGroupsRef.current = new Map()
-    canvasObjectNodesRef.current = new Map()
-    layerObjectTargetsRef.current = new Map()
-    draftEraserPathRef.current = null
-
-    const assetsByLayer = groupItemsByLayer(assets)
-    const strokesByLayer = groupItemsByLayer(strokes)
-    const objectOffsets = objectOffsetsRef.current
-    const assetTransforms = assetTransformsRef.current
-    const layerGroups = new Map<string, LeaferGroup>()
-
-    for (const layer of layers) {
-      const layerCanEdit = layer.kind !== 'background' && layer.visible && !layer.locked
-      const layerGroup = new Group({
-        opacity: layer.opacity,
-        visible: layer.visible
-      })
-
-      if (layer.kind === 'background') {
-        layerGroup.add(
-          new Rect({
-            x: 0,
-            y: 0,
-            width: dimensions.width,
-            height: dimensions.height,
-            fill: '#fbfbfa'
-          })
-        )
-      }
-
-      const layerAssets = assetsByLayer.get(layer.id) ?? []
-      const layerStrokes = strokesByLayer.get(layer.id) ?? []
-      const layerIsGroup = isCanvasGroupLayer(layer)
-
-      if (layerIsGroup) {
-        const groupBaseBounds = getLayerBaseBounds(layer.id, assetsByLayer, strokesByLayer, objectOffsets, assetTransforms)
-
-        if (groupBaseBounds) {
-          const groupOffset = getObjectOffset(objectOffsets, 'group', layer.id)
-          const groupBounds = {
-            ...groupBaseBounds,
-            x: groupBaseBounds.x + groupOffset.x,
-            y: groupBaseBounds.y + groupOffset.y
-          }
-          const groupTarget: CanvasObjectTarget = { kind: 'group', id: layer.id }
-          const groupBox = new Box({
-            x: groupBounds.x,
-            y: groupBounds.y,
-            width: Math.max(1, groupBounds.width),
-            height: Math.max(1, groupBounds.height),
-            fill: 'rgba(0,0,0,0)',
-            editable: layerCanEdit,
-            draggable: layerCanEdit,
-            hittable: layerCanEdit,
-            hitFill: 'all',
-            hitChildren: false,
-            resizeChildren: true,
-            editConfig: {
-              resizeable: false,
-              flipable: false,
-              rotateable: false,
-              skewable: false
-            },
-            canvasObjectKind: 'group',
-            canvasObjectId: layer.id
-          })
-          const groupContent = new Group(getFlippedContentGroupProps(
-            groupBaseBounds,
-            getObjectFlipState(objectFlipStatesRef.current, groupTarget)
-          ))
-
-          for (const asset of layerAssets) {
-            const assetBounds = getAssetRenderBounds(asset, objectOffsets, assetTransforms)
-            const assetFlipState = getObjectFlipState(objectFlipStatesRef.current, { kind: 'asset', id: asset.id })
-            const assetGroup = new Box({
-              x: assetBounds.x - groupBaseBounds.x,
-              y: assetBounds.y - groupBaseBounds.y,
-              width: Math.max(1, assetBounds.width),
-              height: Math.max(1, assetBounds.height),
-              fill: 'rgba(0,0,0,0)',
-              editable: false,
-              draggable: false,
-              hittable: false,
-              hitFill: 'none',
-              hitChildren: false,
-              resizeChildren: true,
-              canvasObjectKind: 'asset',
-              canvasObjectId: asset.id
-            })
-
-            addCanvasObjectGroup(
-              groupContent,
-              assetGroup,
-              {
-                kind: 'asset',
-                id: asset.id,
-                bounds: assetBounds
-              },
-              new Image({
-                x: 0,
-                y: 0,
-                width: assetBounds.width,
-                height: assetBounds.height,
-                url: asset.url,
-                cornerRadius: 8,
-                hittable: false
-              }),
-              layerStrokes.filter((stroke) => stroke.tool === 'eraser'),
-              Group,
-              Path,
-              assetFlipState,
-              objectOffsets,
-              pathTools
-            )
-          }
-
-          for (const stroke of layerStrokes.filter((item) => item.tool !== 'eraser')) {
-            const offset = getObjectOffset(objectOffsets, 'stroke', stroke.id)
-            const strokeBounds = getSvgPathBounds(stroke.path)
-            if (!strokeBounds) {
-              continue
-            }
-
-            const strokeFlipState = getObjectFlipState(objectFlipStatesRef.current, { kind: 'stroke', id: stroke.id })
-            const strokeGroup = new Box({
-              x: strokeBounds.x + offset.x - groupBaseBounds.x,
-              y: strokeBounds.y + offset.y - groupBaseBounds.y,
-              width: Math.max(1, strokeBounds.width),
-              height: Math.max(1, strokeBounds.height),
-              fill: 'rgba(0,0,0,0)',
-              editable: false,
-              draggable: false,
-              hittable: false,
-              hitFill: 'none',
-              hitChildren: false,
-              canvasObjectKind: 'stroke',
-              canvasObjectId: stroke.id
-            })
-
-            addCanvasObjectGroup(
-              groupContent,
-              strokeGroup,
-              {
-                kind: 'stroke',
-                id: stroke.id,
-                bounds: strokeBounds
-              },
-              new Path({
-                x: 0,
-                y: 0,
-                path: translatePathToLocal(stroke.path, strokeBounds, pathTools),
-                fill: stroke.color,
-                hittable: false
-              }),
-              layerStrokes.filter((item) => item.tool === 'eraser'),
-              Group,
-              Path,
-              strokeFlipState,
-              objectOffsets,
-              pathTools
-            )
-          }
-
-          groupBox.add(groupContent)
-          layerGroup.add(groupBox)
-          canvasObjectNodesRef.current.set(getObjectKey('group', layer.id), groupBox)
-          layerObjectTargetsRef.current.set(layer.id, groupTarget)
-        }
-
-        rootGroup.add(layerGroup)
-        layerGroups.set(layer.id, layerGroup)
-        continue
-      }
-
-      for (const asset of layerAssets) {
-        const assetBounds = getAssetRenderBounds(asset, objectOffsets, assetTransforms)
-        const flipState = getObjectFlipState(objectFlipStatesRef.current, { kind: 'asset', id: asset.id })
-        const assetGroup = new Box({
-          x: assetBounds.x,
-          y: assetBounds.y,
-          width: Math.max(1, assetBounds.width),
-          height: Math.max(1, assetBounds.height),
-          fill: 'rgba(0,0,0,0)',
-          editable: layerCanEdit,
-          draggable: layerCanEdit,
-          hittable: layerCanEdit,
-          hitFill: 'all',
-          hitChildren: false,
-          resizeChildren: true,
-          lockRatio: true,
-          widthRange: [MIN_ASSET_SIZE, dimensions.width * 2],
-          heightRange: [MIN_ASSET_SIZE, dimensions.height * 2],
-          editConfig: {
-            resizeable: layerCanEdit,
-            lockRatio: true,
-            flipable: false,
-            rotateable: false,
-            skewable: false
-          },
-          canvasObjectKind: 'asset',
-          canvasObjectId: asset.id
-        })
-
-        addCanvasObjectGroup(
-          layerGroup,
-          assetGroup,
-          {
-            kind: 'asset',
-            id: asset.id,
-            bounds: assetBounds
-          },
-          new Image({
-            x: 0,
-            y: 0,
-            width: assetBounds.width,
-            height: assetBounds.height,
-            url: asset.url,
-            cornerRadius: 8,
-            hittable: false
-          }),
-          layerStrokes.filter((stroke) => stroke.tool === 'eraser'),
-          Group,
-          Path,
-          flipState,
-          objectOffsets,
-          pathTools
-        )
-        canvasObjectNodesRef.current.set(getObjectKey('asset', asset.id), assetGroup)
-        layerObjectTargetsRef.current.set(layer.id, { kind: 'asset', id: asset.id })
-      }
-
-      for (let strokeIndex = 0; strokeIndex < layerStrokes.length; strokeIndex += 1) {
-        const stroke = layerStrokes[strokeIndex]
-        if (!stroke.path) {
-          continue
-        }
-
-        if (stroke.tool === 'eraser') {
-          continue
-        }
-
-        const offset = getObjectOffset(objectOffsets, 'stroke', stroke.id)
-        const flipState = getObjectFlipState(objectFlipStatesRef.current, { kind: 'stroke', id: stroke.id })
-        const strokeBounds = getSvgPathBounds(stroke.path) ?? {
-          x: 0,
-          y: 0,
-          width: 1,
-          height: 1
-        }
-        const strokeGroup = new Box({
-          x: strokeBounds.x + offset.x,
-          y: strokeBounds.y + offset.y,
-          width: Math.max(1, strokeBounds.width),
-          height: Math.max(1, strokeBounds.height),
-          fill: 'rgba(0,0,0,0)',
-          editable: layerCanEdit,
-          draggable: layerCanEdit,
-          hittable: layerCanEdit,
-          hitFill: 'all',
-          hitChildren: false,
-          editConfig: {
-            resizeable: false,
-            flipable: false,
-            rotateable: false,
-            skewable: false
-          },
-          canvasObjectKind: 'stroke',
-          canvasObjectId: stroke.id
-        })
-
-        addCanvasObjectGroup(
-          layerGroup,
-          strokeGroup,
-          {
-            kind: 'stroke',
-            id: stroke.id,
-            bounds: strokeBounds
-          },
-          new Path({
-            x: 0,
-            y: 0,
-            path: translatePathToLocal(stroke.path, strokeBounds, pathTools),
-            fill: stroke.color,
-            hittable: false
-          }),
-          layerStrokes.slice(strokeIndex + 1).filter((item) => item.tool === 'eraser'),
-          Group,
-          Path,
-          flipState,
-          objectOffsets,
-          pathTools
-        )
-        canvasObjectNodesRef.current.set(getObjectKey('stroke', stroke.id), strokeGroup)
-        layerObjectTargetsRef.current.set(layer.id, { kind: 'stroke', id: stroke.id })
-      }
-
-      rootGroup.add(layerGroup)
-      layerGroups.set(layer.id, layerGroup)
-    }
-
-    layerGroupsRef.current = layerGroups
+    renderWhiteboardScene({
+      context,
+      assets,
+      strokes,
+      layers,
+      dimensions,
+      objectOffsets: objectOffsetsRef.current,
+      assetTransforms: assetTransformsRef.current,
+      objectFlipStates: objectFlipStatesRef.current,
+      layerGroupsRef,
+      canvasObjectNodesRef,
+      layerObjectTargetsRef,
+      draftEraserPathRef,
+    })
   }, [assets, dimensions.height, dimensions.width, layers, renderReadyVersion, strokes])
 
   useEffect(() => {

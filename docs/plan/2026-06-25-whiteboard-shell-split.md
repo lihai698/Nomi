@@ -37,13 +37,24 @@ PR#21 引入白板节点时为过门岗把两个巨壳临时入了白名单：
 - 预期壳：~2231（仍超，进 Phase C）。基线先 ratchet 到实际值锁战果。
 
 ### Phase C — LeaferCanvas 组件本体 hook 化（难，核心）
-把 refs 打包成 `useWhiteboardCanvasRefs()` 返回的 typed bag，各 hook 收 `(refs, props/deps)`：
-- `hooks/useLeaferScene.ts` — ~320 行初始化 effect（leafer App/editor/export 动态 import + 渲染同步 effects）。
-- `hooks/usePointerDrawing.ts` — 草稿预览 + brush/eraser 指针 handler + 光标。
-- `hooks/useBoxSelection.ts` — 框选 + 多选拖拽 + stage pointer capture。
-- `hooks/useCanvasSelectionActions.ts` — 选中项 move/delete/flip/group + 右键菜单 + 键盘快捷键 + editor 事件。
-- 壳留：refs/state/`useImperativeHandle`/JSX/hook 装配。
-- 目标壳：< 800 → 出白名单。若个别 hook 抽取风险过高，先 ratchet 基线下调、记 backlog，不强行硬切坏行为。
+
+**C1（已做，低风险，已并 main）：** 渲染树构建 `useLayoutEffect`（~305 行）→ `whiteboardSceneRender.ts`
+的 `renderWhiteboardScene(params)`，壳留薄 effect（guard + 一次调用 + deps 不变）。显式 params（context +
+assets/strokes/layers/dimensions + 三个 ref-map 值 + 四个 node-map ref 对象），行为逐字不变，typecheck 绿、
+lint 零新增。壳 2220→1921。
+
+**C2（剩余，高风险，留专项）：** 交互层。盘点后这部分**不是**可独立搬运的纯逻辑，而是相互依赖的 React hook 链：
+- 选择动作链：`getEditableSelectedTarget → moveSelectedTarget / deleteSelectedTarget / flipSelectedTarget /
+  groupSelectedTargets → handleGroupMenu*`，全是 `useCallback`，彼此 deps 串联。
+- 键盘 / 右键菜单 / editor 事件 / 框选 / 多选拖拽 / 绘制：`useEffect` + `useCallback`，闭包 50+ 个共享 ref + 多个
+  state setter（setContextMenu/setSelectionBox/setRenderReadyVersion/updateSelectedObjectTargets）。
+
+这些**无法**像 C1 那样抽成纯函数；唯一干净做法是抽成自定义 hook（`useWhiteboardSelectionActions` /
+`usePointerDrawing` / `useBoxSelection`），每个收一个较大的共享 ctx（refs + props + setters）。机制可行但：
+① 改的是白板最易碎的指针/选择/键盘行为；② 必须配 R13 真机走查（画笔/橡皮/框选/多选拖拽/右键翻转编组/截图）才能
+证明零回归；③ 当前主干被并行会话（audio-first-class-timeline）改红（test/filesize），不宜在红仓上叠大重构。
+
+故 C2 留作**专项后续**：单独 session、干净仓、做完配 R13。基线已 ratchet 到 1921 锁住战果，不强行硬切坏行为（守 P3）。
 
 ## 验收门
 - 每阶段：`pnpm run gates`（filesize→tokens→lint→typecheck→test→build）全绿。
