@@ -186,14 +186,45 @@ function Scene3DEditor({ node, width, height, readOnly = false }: Scene3DEditorP
 
   return (
     <>
-      <div className="relative w-full h-full overflow-hidden">
+      <div className="group relative w-full h-full overflow-hidden">
         {thumbnailUrl ? (
-          <img
-            className="w-full h-full object-contain select-none pointer-events-none bg-nomi-ink-05"
-            src={thumbnailUrl}
-            alt=""
-            draggable={false}
-          />
+          <>
+            <img
+              className="w-full h-full object-contain select-none pointer-events-none bg-nomi-ink-05"
+              src={thumbnailUrl}
+              alt=""
+              draggable={false}
+            />
+            {/* 有缩略图时整图悬浮可点开编辑器——此前只有右上角小钮能点，整张图看着可点其实点不动（用户反馈）。
+                覆盖层 pointer-events-none 让节点仍可从图上拖拽；只有居中按钮接管点击（外壳放行 button 不触发拖拽）。 */}
+            <div
+              className={cn(
+                'pointer-events-none absolute inset-0 grid place-items-center',
+                'bg-nomi-ink/0 transition-colors duration-[var(--nomi-transition-fast)] group-hover:bg-nomi-ink/[0.32]',
+              )}
+            >
+              <button
+                type="button"
+                aria-label="打开 3D 编辑器"
+                className={cn(
+                  'pointer-events-auto inline-flex items-center gap-1.5 rounded-nomi px-3 py-1.5 border-0 cursor-pointer',
+                  'bg-nomi-paper/[0.92] text-body-sm font-semibold text-nomi-ink shadow-nomi-sm backdrop-blur-[10px]',
+                  'opacity-0 transition-opacity duration-[var(--nomi-transition-fast)] group-hover:opacity-100',
+                  'focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-nomi-accent focus-visible:outline-offset-2',
+                )}
+                onFocus={preloadFullscreenEditor}
+                onPointerEnter={preloadFullscreenEditor}
+                onPointerDown={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setFullscreen(true)
+                }}
+              >
+                <IconCube size={15} stroke={1.7} />
+                打开 3D 编辑器
+              </button>
+            </div>
+          </>
         ) : (
           <div className={cn('flex h-full w-full items-center justify-center')}>
             <EmptyStateLauncher
